@@ -6,6 +6,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
+from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OpenAIEmbeddingClient
 from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import ChatMessageIn, ChatMessageOut
@@ -19,6 +20,7 @@ memory_service = MemoryService(
     collection_name=settings.qdrant_collection,
     vector_size=settings.qdrant_vector_size,
 )
+llm_service = LlmService(settings)
 
 
 @asynccontextmanager
@@ -41,19 +43,6 @@ app = FastAPI(title="PersonaBot API", version="0.1.0", lifespan=lifespan)
 class HealthResponse(BaseModel):
     status: str
     service: str
-
-
-def _compose_assistant_message(user_message: str, mood: str, memory_hint: str | None) -> str:
-    if mood == "playful":
-        prefix = "Nice energy. "
-    elif mood == "guarded":
-        prefix = "I hear you. "
-    elif mood == "calm":
-        prefix = "Got it, keeping this steady. "
-    else:
-        prefix = "Understood. "
-    hint = f" {memory_hint}" if memory_hint else ""
-    return f"{prefix}You said: {user_message}.{hint}"
 
 
 async def _remember_if_needed(
@@ -145,8 +134,11 @@ async def chat_socket(websocket: WebSocket) -> None:
                     memories=memories,
                 )
                 memory_hint = pick_memory_hint(memories)
-                assistant_message = _compose_assistant_message(
-                    incoming.message, state_update.state.current_mood, memory_hint
+                assistant_message = await llm_service.generate_reply(
+                    user_message=incoming.message,
+                    state=state_update.state,
+                    rag_context=rag_context.to_prompt_text(),
+                    memory_hint=memory_hint,
                 )
 
                 await service.append_event(
@@ -165,8 +157,6 @@ async def chat_socket(websocket: WebSocket) -> None:
                     state=state_update.state,
                     created_at=datetime.now(timezone.utc),
                 )
-            # This will feed the model call in the next step.
-            _ = rag_context.to_prompt_text()
             await websocket.send_json(outgoing.model_dump(mode="json"))
     except WebSocketDisconnect:
         return
