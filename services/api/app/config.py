@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     memory_recency_weight: float = 0.13
     memory_recency_half_life_hours: float = 72.0
     default_persona_id: str = "balanced"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"

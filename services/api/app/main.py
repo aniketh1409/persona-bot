@@ -4,6 +4,7 @@ import inspect
 from time import perf_counter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
@@ -63,6 +64,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="PersonaBot API", version="0.1.0", lifespan=lifespan)
+allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class HealthResponse(BaseModel):
