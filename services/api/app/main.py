@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import inspect
 from time import perf_counter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -34,7 +35,17 @@ async def lifespan(_: FastAPI):
         pass
     yield
     await redis_client.aclose()
-    await qdrant_client.aclose()
+    close_coro = getattr(qdrant_client, "aclose", None)
+    if callable(close_coro):
+        maybe_awaitable = close_coro()
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
+    else:
+        close_sync = getattr(qdrant_client, "close", None)
+        if callable(close_sync):
+            maybe_awaitable = close_sync()
+            if inspect.isawaitable(maybe_awaitable):
+                await maybe_awaitable
     await engine.dispose()
 
 
