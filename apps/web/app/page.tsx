@@ -39,6 +39,7 @@ type ServerEvent =
 
 const USER_ID_KEY = "personabot.user_id";
 const SESSION_ID_KEY = "personabot.session_id";
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -57,6 +58,7 @@ export default function HomePage() {
   const reconnectTimerRef = useRef<number | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
   const shouldReconnectRef = useRef(true);
+  const reconnectAttemptRef = useRef(0);
 
   const wsUrl = useMemo(resolveWsUrl, []);
 
@@ -68,6 +70,8 @@ export default function HomePage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [state, setState] = useState<EmotionalState | null>(null);
   const [socketVersion, setSocketVersion] = useState(0);
+  const [retryLabel, setRetryLabel] = useState<string | null>(null);
+  const [retryPaused, setRetryPaused] = useState(false);
 
   useEffect(() => {
     const savedUserId = window.localStorage.getItem(USER_ID_KEY);
@@ -82,11 +86,15 @@ export default function HomePage() {
 
   useEffect(() => {
     shouldReconnectRef.current = true;
+    setRetryLabel("connecting...");
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
     socket.onopen = () => {
+      reconnectAttemptRef.current = 0;
       setConnected(true);
+      setRetryPaused(false);
+      setRetryLabel(null);
       setMessages((prev) => [
         ...prev,
         { id: makeId(), role: "system", text: "Socket connected." }
@@ -187,12 +195,33 @@ export default function HomePage() {
       wsRef.current = null;
       setConnected(false);
       setIsAwaitingReply(false);
-      setMessages((prev) => [...prev, { id: makeId(), role: "system", text: "Socket disconnected." }]);
-      if (shouldReconnectRef.current) {
-        reconnectTimerRef.current = window.setTimeout(() => {
-          setSocketVersion((prev) => prev + 1);
-        }, 1200);
+      if (!shouldReconnectRef.current) {
+        return;
       }
+
+      setMessages((prev) => [...prev, { id: makeId(), role: "system", text: "Socket disconnected." }]);
+      reconnectAttemptRef.current += 1;
+      if (reconnectAttemptRef.current > MAX_RECONNECT_ATTEMPTS) {
+        setRetryPaused(true);
+        setRetryLabel("auto reconnect paused");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId(),
+            role: "system",
+            text: "Backend still offline. Click reconnect after your API server is running."
+          }
+        ]);
+        return;
+      }
+
+      const delayMs = Math.min(1000 * 2 ** (reconnectAttemptRef.current - 1), 10000);
+      setRetryLabel(
+        `retrying in ${(delayMs / 1000).toFixed(1)}s (${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`
+      );
+      reconnectTimerRef.current = window.setTimeout(() => {
+        setSocketVersion((prev) => prev + 1);
+      }, delayMs);
     };
 
     return () => {
@@ -203,6 +232,19 @@ export default function HomePage() {
       socket.close();
     };
   }, [socketVersion, wsUrl]);
+
+  function handleManualReconnect() {
+    if (connected) {
+      return;
+    }
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+    }
+    reconnectAttemptRef.current = 0;
+    setRetryPaused(false);
+    setRetryLabel("connecting...");
+    setSocketVersion((prev) => prev + 1);
+  }
 
   function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -249,8 +291,21 @@ export default function HomePage() {
             <h1>PersonaBot</h1>
             <p className="subtext">Stateful streaming chat with memory context.</p>
           </div>
-          <div className={`status ${connected ? "up" : "down"}`}>{connected ? "connected" : "offline"}</div>
+          <div className="statusWrap">
+            <div className={`status ${connected ? "up" : "down"}`}>{connected ? "connected" : "offline"}</div>
+            {!connected ? (
+              <button type="button" className="reconnectBtn" onClick={handleManualReconnect}>
+                reconnect
+              </button>
+            ) : null}
+          </div>
         </header>
+        {!connected && retryLabel ? (
+          <p className="retryInfo">
+            {retryLabel}
+            {retryPaused ? "." : ""}
+          </p>
+        ) : null}
 
         <section className="meta">
           <p>
