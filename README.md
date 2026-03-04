@@ -72,3 +72,4 @@ Backend:
 2. Add `state-engine` module (trust/affection/energy update rules).
 3. Add memory ingestion + retrieval against Qdrant.
 4. Stream model tokens over `/ws/chat`.
+5. A whole lotta stuff lol.
