@@ -86,7 +86,6 @@ export default function HomePage() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
-  const shouldReconnectRef = useRef(true);
   const reconnectAttemptRef = useRef(0);
 
   const wsUrl = useMemo(resolveWsUrl, []);
@@ -161,16 +160,28 @@ export default function HomePage() {
   }, [selectedPersonaId]);
 
   useEffect(() => {
-    shouldReconnectRef.current = true;
+    let effectActive = true;
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     setRetryLabel("connecting...");
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
     socket.onopen = () => {
+      if (!effectActive) {
+        return;
+      }
       reconnectAttemptRef.current = 0;
       setConnected(true);
       setRetryPaused(false);
       setRetryLabel(null);
+      if (reconnectTimerRef.current) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       setMessages((prev) => [
         ...prev,
         { id: makeId(), role: "system", text: "Socket connected." }
@@ -178,6 +189,9 @@ export default function HomePage() {
     };
 
     socket.onmessage = (event) => {
+      if (!effectActive) {
+        return;
+      }
       let parsed: ServerEvent;
       try {
         parsed = JSON.parse(event.data) as ServerEvent;
@@ -272,13 +286,15 @@ export default function HomePage() {
     };
 
     socket.onclose = () => {
-      wsRef.current = null;
-      setConnected(false);
-      setIsAwaitingReply(false);
-      if (!shouldReconnectRef.current) {
+      if (wsRef.current === socket) {
+        wsRef.current = null;
+      }
+      if (!effectActive) {
         return;
       }
 
+      setConnected(false);
+      setIsAwaitingReply(false);
       setMessages((prev) => [...prev, { id: makeId(), role: "system", text: "Socket disconnected." }]);
       reconnectAttemptRef.current += 1;
       if (reconnectAttemptRef.current > MAX_RECONNECT_ATTEMPTS) {
@@ -300,14 +316,21 @@ export default function HomePage() {
         `retrying in ${(delayMs / 1000).toFixed(1)}s (${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})`
       );
       reconnectTimerRef.current = window.setTimeout(() => {
+        if (!effectActive) {
+          return;
+        }
         setSocketVersion((prev) => prev + 1);
       }, delayMs);
     };
 
     return () => {
-      shouldReconnectRef.current = false;
+      effectActive = false;
       if (reconnectTimerRef.current) {
         window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current === socket) {
+        wsRef.current = null;
       }
       socket.close();
     };
