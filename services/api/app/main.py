@@ -21,6 +21,11 @@ memory_service = MemoryService(
     embedder=OpenAIEmbeddingClient(settings),
     collection_name=settings.qdrant_collection,
     vector_size=settings.qdrant_vector_size,
+    candidate_multiplier=settings.memory_candidate_multiplier,
+    semantic_weight=settings.memory_semantic_weight,
+    importance_weight=settings.memory_importance_weight,
+    recency_weight=settings.memory_recency_weight,
+    recency_half_life_hours=settings.memory_recency_half_life_hours,
 )
 llm_service = LlmService(settings)
 

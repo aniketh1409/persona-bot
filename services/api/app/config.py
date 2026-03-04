@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     qdrant_collection: str = "persona_memories"
     qdrant_vector_size: int = 1536
     memory_top_k: int = 5
+    memory_candidate_multiplier: int = 4
+    memory_semantic_weight: float = 0.62
+    memory_importance_weight: float = 0.25
+    memory_recency_weight: float = 0.13
+    memory_recency_half_life_hours: float = 72.0
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
