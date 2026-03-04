@@ -111,9 +111,41 @@ h1 {
   font-family: var(--font-mono), monospace;
 }
 
+.personaBar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 220px) 1fr;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7fbff;
+}
+
+.personaBar label {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.78rem;
+  text-transform: lowercase;
+}
+
+.personaBar select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.38rem 0.45rem;
+  background: #fff;
+  color: var(--text);
+  font-family: var(--font-mono), monospace;
+}
+
+.personaHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.4rem;
   margin: 0;
   padding: 0.7rem;
@@ -258,6 +290,10 @@ h1 {
   }
 
   .meta {
+    grid-template-columns: 1fr;
+  }
+
+  .personaBar {
     grid-template-columns: 1fr;
   }
 

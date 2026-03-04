@@ -23,12 +23,13 @@ type ChatUiMessage = {
 
 type ServerEvent =
   | { type: "system"; message: string }
-  | { type: "meta"; user_id: string; session_id: string; state: EmotionalState }
+  | { type: "meta"; user_id: string; session_id: string; persona_id: string; state: EmotionalState }
   | {
       type: "done";
       message: string;
       user_id: string;
       session_id: string;
+      persona_id: string;
       state: EmotionalState;
       latency_ms?: number;
       first_token_ms?: number;
@@ -37,8 +38,17 @@ type ServerEvent =
   | { type: "token"; delta: string }
   | { type: "error"; message: string };
 
+type PersonaOption = {
+  id: string;
+  name: string;
+  description: string;
+  is_default: boolean;
+  temperature: number;
+};
+
 const USER_ID_KEY = "personabot.user_id";
 const SESSION_ID_KEY = "personabot.session_id";
+const PERSONA_ID_KEY = "personabot.persona_id";
 const MAX_RECONNECT_ATTEMPTS = 8;
 
 function makeId(): string {
@@ -53,6 +63,25 @@ function resolveWsUrl(): string {
   return "ws://localhost:8000/ws/chat";
 }
 
+function resolveApiHttpBase(wsUrl: string): string {
+  const explicit = process.env.NEXT_PUBLIC_API_HTTP_URL;
+  if (explicit) {
+    return explicit;
+  }
+
+  if (wsUrl.startsWith("wss://")) {
+    const withoutProtocol = wsUrl.slice("wss://".length);
+    const host = withoutProtocol.split("/")[0];
+    return `https://${host}`;
+  }
+  if (wsUrl.startsWith("ws://")) {
+    const withoutProtocol = wsUrl.slice("ws://".length);
+    const host = withoutProtocol.split("/")[0];
+    return `http://${host}`;
+  }
+  return "http://localhost:8000";
+}
+
 export default function HomePage() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -61,6 +90,7 @@ export default function HomePage() {
   const reconnectAttemptRef = useRef(0);
 
   const wsUrl = useMemo(resolveWsUrl, []);
+  const apiHttpBase = useMemo(() => resolveApiHttpBase(wsUrl), [wsUrl]);
 
   const [messages, setMessages] = useState<ChatUiMessage[]>([]);
   const [input, setInput] = useState("");
@@ -68,6 +98,9 @@ export default function HomePage() {
   const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [personas, setPersonas] = useState<PersonaOption[]>([]);
+  const [selectedPersonaId, setSelectedPersonaId] = useState("balanced");
+  const [personaLoadError, setPersonaLoadError] = useState<string | null>(null);
   const [state, setState] = useState<EmotionalState | null>(null);
   const [socketVersion, setSocketVersion] = useState(0);
   const [retryLabel, setRetryLabel] = useState<string | null>(null);
@@ -76,13 +109,56 @@ export default function HomePage() {
   useEffect(() => {
     const savedUserId = window.localStorage.getItem(USER_ID_KEY);
     const savedSessionId = window.localStorage.getItem(SESSION_ID_KEY);
+    const savedPersonaId = window.localStorage.getItem(PERSONA_ID_KEY);
     if (savedUserId) {
       setUserId(savedUserId);
     }
     if (savedSessionId) {
       setSessionId(savedSessionId);
     }
+    if (savedPersonaId) {
+      setSelectedPersonaId(savedPersonaId);
+    }
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadPersonas() {
+      try {
+        setPersonaLoadError(null);
+        const response = await fetch(`${apiHttpBase}/personas`, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`request failed (${response.status})`);
+        }
+        const payload = (await response.json()) as PersonaOption[];
+        setPersonas(payload);
+
+        const savedPersonaId = window.localStorage.getItem(PERSONA_ID_KEY);
+        const hasSaved = savedPersonaId && payload.some((persona) => persona.id === savedPersonaId);
+        if (hasSaved) {
+          setSelectedPersonaId(savedPersonaId as string);
+          return;
+        }
+
+        const defaultPersona = payload.find((persona) => persona.is_default) ?? payload[0];
+        if (defaultPersona) {
+          setSelectedPersonaId(defaultPersona.id);
+          window.localStorage.setItem(PERSONA_ID_KEY, defaultPersona.id);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setPersonaLoadError("could not load personas");
+        }
+      }
+    }
+
+    void loadPersonas();
+    return () => controller.abort();
+  }, [apiHttpBase]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PERSONA_ID_KEY, selectedPersonaId);
+  }, [selectedPersonaId]);
 
   useEffect(() => {
     shouldReconnectRef.current = true;
@@ -117,9 +193,11 @@ export default function HomePage() {
       if (parsed.type === "meta") {
         setUserId(parsed.user_id);
         setSessionId(parsed.session_id);
+        setSelectedPersonaId(parsed.persona_id);
         setState(parsed.state);
         window.localStorage.setItem(USER_ID_KEY, parsed.user_id);
         window.localStorage.setItem(SESSION_ID_KEY, parsed.session_id);
+        window.localStorage.setItem(PERSONA_ID_KEY, parsed.persona_id);
         return;
       }
 
@@ -139,9 +217,11 @@ export default function HomePage() {
       if (parsed.type === "done") {
         setUserId(parsed.user_id);
         setSessionId(parsed.session_id);
+        setSelectedPersonaId(parsed.persona_id);
         setState(parsed.state);
         window.localStorage.setItem(USER_ID_KEY, parsed.user_id);
         window.localStorage.setItem(SESSION_ID_KEY, parsed.session_id);
+        window.localStorage.setItem(PERSONA_ID_KEY, parsed.persona_id);
 
         const assistantId = activeAssistantIdRef.current;
         if (assistantId) {
@@ -278,10 +358,15 @@ export default function HomePage() {
       JSON.stringify({
         message,
         user_id: userId ?? undefined,
-        session_id: sessionId ?? undefined
+        session_id: sessionId ?? undefined,
+        persona_id: selectedPersonaId
       })
     );
   }
+
+  const selectedPersona =
+    personas.find((persona) => persona.id === selectedPersonaId) ??
+    ({ id: selectedPersonaId, name: selectedPersonaId, description: "", is_default: false, temperature: 0.6 } as PersonaOption);
 
   return (
     <main className="page">
@@ -307,6 +392,25 @@ export default function HomePage() {
           </p>
         ) : null}
 
+        <section className="personaBar">
+          <label htmlFor="persona-select">persona</label>
+          <select
+            id="persona-select"
+            value={selectedPersonaId}
+            onChange={(event) => setSelectedPersonaId(event.target.value)}
+          >
+            {personas.length === 0 ? <option value={selectedPersonaId}>{selectedPersona.name}</option> : null}
+            {personas.map((persona) => (
+              <option key={persona.id} value={persona.id}>
+                {persona.name}
+              </option>
+            ))}
+          </select>
+          <p className="personaHint">
+            {personaLoadError ? personaLoadError : selectedPersona.description || "persona controls style and tone"}
+          </p>
+        </section>
+
         <section className="meta">
           <p>
             <strong>user:</strong> {userId ?? "new"}
@@ -316,6 +420,9 @@ export default function HomePage() {
           </p>
           <p>
             <strong>mood:</strong> {state?.current_mood ?? "neutral"}
+          </p>
+          <p>
+            <strong>persona:</strong> {selectedPersona.name}
           </p>
         </section>
 
