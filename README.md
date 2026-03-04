@@ -46,6 +46,7 @@ cd services/api
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev]"
+alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -66,10 +67,23 @@ Backend:
 - `qdrant-client` (vector memory)
 - `openai`, `httpx`
 
+## Database Migrations
+
+Run from `services/api`:
+
+```bash
+alembic upgrade head
+```
+
+Create a new revision after schema changes:
+
+```bash
+alembic revision --autogenerate -m "Describe change"
+```
+
 ## Next Build Steps
 
-1. Implement session/user profile tables in PostgreSQL.
-2. Add `state-engine` module (trust/affection/energy update rules).
-3. Add memory ingestion + retrieval against Qdrant.
-4. Stream model tokens over `/ws/chat`.
-5. A whole lotta stuff lol.
+1. Add websocket integration tests (event order + reconnect behavior).
+2. Improve memory ranking (importance score + dedupe + recency decay).
+3. Add persona profile configuration and persona switching.
+4. Add deployment pipeline with Docker + GitHub Actions.

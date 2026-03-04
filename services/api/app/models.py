@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -17,6 +17,7 @@ class User(Base):
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
+    __table_args__ = (Index("ix_chat_sessions_user_last_active", "user_id", "last_active_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
@@ -43,6 +44,7 @@ class RelationshipState(Base):
 
 class ConversationEvent(Base):
     __tablename__ = "conversation_events"
+    __table_args__ = (Index("ix_events_session_created_at", "session_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_sessions.id"), index=True)
@@ -55,6 +57,7 @@ class ConversationEvent(Base):
 
 class ChatTurnMetric(Base):
     __tablename__ = "chat_turn_metrics"
+    __table_args__ = (Index("ix_metrics_session_created_at", "session_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_sessions.id"), index=True)

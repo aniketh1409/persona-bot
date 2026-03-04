@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    auto_create_schema: bool = False
 
     postgres_dsn: str = "postgresql+asyncpg://personabot:personabot@localhost:5432/personabot"
     redis_url: str = "redis://localhost:6379/0"

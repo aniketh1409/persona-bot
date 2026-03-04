@@ -17,6 +17,8 @@ qdrant_client = AsyncQdrantClient(url=settings.qdrant_url)
 
 
 async def init_db() -> None:
+    if not settings.auto_create_schema:
+        return
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
