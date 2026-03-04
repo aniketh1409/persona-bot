@@ -4,17 +4,34 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
-from app.db import db_session, engine, init_db, redis_client
+from app.config import get_settings
+from app.db import db_session, engine, init_db, qdrant_client, redis_client
+from app.memory_service import MemoryChunk, MemoryService, OpenAIEmbeddingClient
+from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import ChatMessageIn, ChatMessageOut
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
+
+settings = get_settings()
+memory_service = MemoryService(
+    qdrant=qdrant_client,
+    embedder=OpenAIEmbeddingClient(settings),
+    collection_name=settings.qdrant_collection,
+    vector_size=settings.qdrant_vector_size,
+)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    try:
+        await memory_service.ensure_collection()
+    except Exception:
+        # Qdrant or embedding service may be unavailable in local dev.
+        pass
     yield
     await redis_client.aclose()
+    await qdrant_client.aclose()
     await engine.dispose()
 
 
@@ -26,7 +43,7 @@ class HealthResponse(BaseModel):
     service: str
 
 
-def _compose_assistant_message(user_message: str, mood: str) -> str:
+def _compose_assistant_message(user_message: str, mood: str, memory_hint: str | None) -> str:
     if mood == "playful":
         prefix = "Nice energy. "
     elif mood == "guarded":
@@ -35,7 +52,43 @@ def _compose_assistant_message(user_message: str, mood: str) -> str:
         prefix = "Got it, keeping this steady. "
     else:
         prefix = "Understood. "
-    return f"{prefix}You said: {user_message}"
+    hint = f" {memory_hint}" if memory_hint else ""
+    return f"{prefix}You said: {user_message}.{hint}"
+
+
+async def _remember_if_needed(
+    *,
+    user_id: str,
+    session_id: str,
+    role: str,
+    message: str,
+    tags: list[str],
+) -> None:
+    if not memory_service.should_index_memory(role, message, tags):
+        return
+
+    try:
+        await memory_service.store_memory(
+            user_id=user_id,
+            session_id=session_id,
+            role=role,
+            message=message,
+            tags=tags,
+        )
+    except Exception:
+        return
+
+
+async def _recall_memories(user_id: str, message: str, tags: list[str]) -> list[MemoryChunk]:
+    try:
+        return await memory_service.recall(
+            user_id=user_id,
+            query=message,
+            tags=tags or None,
+            limit=settings.memory_top_k,
+        )
+    except Exception:
+        return []
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -75,7 +128,27 @@ async def chat_socket(websocket: WebSocket) -> None:
                 state_update = update_emotional_state(previous_state, incoming.message, session.message_count)
                 await service.save_state(session.id, state_update.state)
 
-                assistant_message = _compose_assistant_message(incoming.message, state_update.state.current_mood)
+                memory_tags = memory_service.extract_tags(incoming.message)
+                await _remember_if_needed(
+                    user_id=user.id,
+                    session_id=session.id,
+                    role="user",
+                    message=incoming.message,
+                    tags=memory_tags,
+                )
+
+                recent_events = await service.recent_events(session.id, limit=12)
+                memories = await _recall_memories(user.id, incoming.message, memory_tags)
+                rag_context = build_rag_context(
+                    state=state_update.state,
+                    recent_events=recent_events,
+                    memories=memories,
+                )
+                memory_hint = pick_memory_hint(memories)
+                assistant_message = _compose_assistant_message(
+                    incoming.message, state_update.state.current_mood, memory_hint
+                )
+
                 await service.append_event(
                     session_id=session.id,
                     user_id=user.id,
@@ -92,6 +165,8 @@ async def chat_socket(websocket: WebSocket) -> None:
                     state=state_update.state,
                     created_at=datetime.now(timezone.utc),
                 )
+            # This will feed the model call in the next step.
+            _ = rag_context.to_prompt_text()
             await websocket.send_json(outgoing.model_dump(mode="json"))
     except WebSocketDisconnect:
         return
