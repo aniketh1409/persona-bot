@@ -16,6 +16,7 @@ class FakeUser:
 class FakeSession:
     id: str
     user_id: str
+    persona_id: str = "balanced"
     message_count: int = 0
 
 
@@ -60,6 +61,17 @@ class FakeSessionService:
         session = FakeSession(id=f"session-{self.last_session_id}", user_id=user_id)
         self.sessions[session.id] = session
         self.__class__.session_creations += 1
+        return session
+
+    async def resolve_or_create_session(
+        self,
+        *,
+        user_id: str,
+        session_id: str | None,
+        persona_id: str,
+    ) -> FakeSession:
+        session = await self.resolve_session(user_id=user_id, session_id=session_id)
+        session.persona_id = persona_id
         return session
 
     async def load_state(self, _session_id: str) -> EmotionalState:
@@ -132,9 +144,22 @@ class FakeLlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
+        persona_name: str = "Balanced",
+        persona_system_prompt: str = "",
+        persona_style_prompt: str = "",
+        persona_temperature: float | None = None,
         memory_hint: str | None = None,
     ):
-        _ = (user_message, state, rag_context, memory_hint)
+        _ = (
+            user_message,
+            state,
+            rag_context,
+            persona_name,
+            persona_system_prompt,
+            persona_style_prompt,
+            persona_temperature,
+            memory_hint,
+        )
         yield "token-one "
         yield "token-two"
 
@@ -144,10 +169,56 @@ class FakeLlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
+        persona_name: str = "Balanced",
+        persona_system_prompt: str = "",
+        persona_style_prompt: str = "",
+        persona_temperature: float | None = None,
         memory_hint: str | None = None,
     ) -> str:
-        _ = (user_message, state, rag_context, memory_hint)
+        _ = (
+            user_message,
+            state,
+            rag_context,
+            persona_name,
+            persona_system_prompt,
+            persona_style_prompt,
+            persona_temperature,
+            memory_hint,
+        )
         return "token-one token-two"
+
+
+class FakePersona:
+    def __init__(self, persona_id: str, name: str, temperature: float, is_default: bool = False) -> None:
+        self.id = persona_id
+        self.name = name
+        self.description = f"{name} persona"
+        self.system_prompt = f"system::{name}"
+        self.style_prompt = f"style::{name}"
+        self.temperature = temperature
+        self.is_default = is_default
+
+
+class FakePersonaService:
+    personas = {
+        "balanced": FakePersona("balanced", "Balanced", 0.6, is_default=True),
+        "coach": FakePersona("coach", "Coach", 0.65),
+        "warm": FakePersona("warm", "Warm", 0.7),
+    }
+
+    def __init__(self, _db) -> None:
+        pass
+
+    async def ensure_defaults(self) -> None:
+        return
+
+    async def list_personas(self) -> list[FakePersona]:
+        return [self.personas["balanced"], self.personas["coach"], self.personas["warm"]]
+
+    async def resolve_persona(self, requested_persona_id: str | None) -> FakePersona:
+        if requested_persona_id and requested_persona_id in self.personas:
+            return self.personas[requested_persona_id]
+        return self.personas["balanced"]
 
 
 @asynccontextmanager
@@ -173,6 +244,7 @@ def _patch_runtime(monkeypatch) -> None:
 
     monkeypatch.setattr(main_module, "db_session", fake_db_session)
     monkeypatch.setattr(main_module, "SessionService", FakeSessionService)
+    monkeypatch.setattr(main_module, "PersonaService", FakePersonaService)
     monkeypatch.setattr(main_module, "memory_service", FakeMemoryService())
     monkeypatch.setattr(main_module, "llm_service", FakeLlmService())
 
@@ -193,6 +265,8 @@ def test_websocket_stream_event_order(monkeypatch) -> None:
     assert event_types[-1] == "done"
     assert event_types.count("token") >= 1
     assert events[-1]["chunk_count"] == 2
+    assert events[0]["persona_id"] == "balanced"
+    assert events[-1]["persona_id"] == "balanced"
 
 
 def test_websocket_preserves_user_and_session_ids(monkeypatch) -> None:
@@ -219,3 +293,41 @@ def test_websocket_preserves_user_and_session_ids(monkeypatch) -> None:
     assert first_done["user_id"] == second_done["user_id"]
     assert first_done["session_id"] == second_done["session_id"]
     assert FakeSessionService.session_creations == 1
+
+
+def test_websocket_supports_persona_switching(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        with client.websocket_connect("/ws/chat") as ws:
+            ws.receive_json()
+
+            ws.send_json({"message": "first turn", "persona_id": "balanced"})
+            first_events = _read_until_done(ws)
+            first_done = first_events[-1]
+
+            ws.send_json(
+                {
+                    "message": "second turn",
+                    "user_id": first_done["user_id"],
+                    "session_id": first_done["session_id"],
+                    "persona_id": "coach",
+                }
+            )
+            second_events = _read_until_done(ws)
+            second_done = second_events[-1]
+
+    assert first_done["persona_id"] == "balanced"
+    assert second_done["persona_id"] == "coach"
+
+
+def test_personas_endpoint_returns_defaults(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/personas")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 3
+    assert payload[0]["id"] == "balanced"

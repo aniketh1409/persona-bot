@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     memory_importance_weight: float = 0.25
     memory_recency_weight: float = 0.13
     memory_recency_half_life_hours: float = 72.0
+    default_persona_id: str = "balanced"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"

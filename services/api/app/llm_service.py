@@ -27,6 +27,10 @@ class LlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
+        persona_name: str = "Balanced",
+        persona_system_prompt: str = "",
+        persona_style_prompt: str = "",
+        persona_temperature: float | None = None,
         memory_hint: str | None = None,
     ) -> str:
         chunks: list[str] = []
@@ -34,6 +38,10 @@ class LlmService:
             user_message=user_message,
             state=state,
             rag_context=rag_context,
+            persona_name=persona_name,
+            persona_system_prompt=persona_system_prompt,
+            persona_style_prompt=persona_style_prompt,
+            persona_temperature=persona_temperature,
             memory_hint=memory_hint,
         ):
             chunks.append(chunk)
@@ -45,6 +53,10 @@ class LlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
+        persona_name: str = "Balanced",
+        persona_system_prompt: str = "",
+        persona_style_prompt: str = "",
+        persona_temperature: float | None = None,
         memory_hint: str | None = None,
     ) -> AsyncIterator[str]:
         fallback = self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
@@ -54,8 +66,9 @@ class LlmService:
             return
 
         system_prompt = (
-            "You are PersonaBot, an emotionally adaptive assistant. "
-            "Keep replies concise, empathetic, and consistent with the provided state and memory context."
+            f"You are PersonaBot in {persona_name} persona mode. "
+            "Keep replies concise, emotionally adaptive, and consistent with state and memory context. "
+            f"{persona_system_prompt} {persona_style_prompt}"
         )
         user_prompt = (
             f"{rag_context}\n\n"
@@ -66,7 +79,7 @@ class LlmService:
         try:
             stream = await self.client.chat.completions.create(
                 model=self.settings.openai_model,
-                temperature=0.6,
+                temperature=persona_temperature if persona_temperature is not None else 0.6,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

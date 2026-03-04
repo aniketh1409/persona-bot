@@ -16,6 +16,7 @@ class ChatMessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
     user_id: str | None = None
     session_id: str | None = None
+    persona_id: str | None = None
 
 
 class ChatMessageOut(BaseModel):
@@ -23,8 +24,17 @@ class ChatMessageOut(BaseModel):
     message: str
     user_id: str
     session_id: str
+    persona_id: str
     state: EmotionalState
     created_at: datetime
     latency_ms: float | None = None
     first_token_ms: float | None = None
     chunk_count: int | None = None
+
+
+class PersonaOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    is_default: bool
+    temperature: float

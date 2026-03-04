@@ -21,6 +21,7 @@ class ChatSession(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    persona_id: Mapped[str] = mapped_column(String(64), ForeignKey("persona_profiles.id"), index=True)
     message_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_active_at: Mapped[datetime] = mapped_column(
@@ -37,6 +38,22 @@ class RelationshipState(Base):
     affection: Mapped[float] = mapped_column(Float, default=0.5)
     trust: Mapped[float] = mapped_column(Float, default=0.5)
     energy: Mapped[float] = mapped_column(Float, default=0.6)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PersonaProfile(Base):
+    __tablename__ = "persona_profiles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(Text)
+    system_prompt: Mapped[str] = mapped_column(Text)
+    style_prompt: Mapped[str] = mapped_column(Text)
+    temperature: Mapped[float] = mapped_column(Float, default=0.6)
+    is_default: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

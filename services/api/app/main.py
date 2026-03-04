@@ -10,8 +10,9 @@ from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
 from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OpenAIEmbeddingClient
+from app.persona_service import PersonaService
 from app.rag_context import build_rag_context, pick_memory_hint
-from app.schemas import ChatMessageIn, ChatMessageOut
+from app.schemas import ChatMessageIn, ChatMessageOut, PersonaOut
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
 
@@ -33,6 +34,13 @@ llm_service = LlmService(settings)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    try:
+        async with db_session() as db:
+            persona_service = PersonaService(db)
+            await persona_service.ensure_defaults()
+    except Exception:
+        # Persona seed can be skipped in environments without DB.
+        pass
     try:
         await memory_service.ensure_collection()
     except Exception:
@@ -102,6 +110,24 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok", service="personabot-api")
 
 
+@app.get("/personas", response_model=list[PersonaOut])
+async def personas() -> list[PersonaOut]:
+    async with db_session() as db:
+        persona_service = PersonaService(db)
+        await persona_service.ensure_defaults()
+        rows = await persona_service.list_personas()
+        return [
+            PersonaOut(
+                id=row.id,
+                name=row.name,
+                description=row.description,
+                is_default=row.is_default,
+                temperature=row.temperature,
+            )
+            for row in rows
+        ]
+
+
 @app.websocket("/ws/chat")
 async def chat_socket(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -118,8 +144,15 @@ async def chat_socket(websocket: WebSocket) -> None:
 
             async with db_session() as db:
                 service = SessionService(db)
+                persona_service = PersonaService(db)
+                await persona_service.ensure_defaults()
+                persona = await persona_service.resolve_persona(incoming.persona_id)
                 user = await service.resolve_user(incoming.user_id)
-                session = await service.resolve_session(user.id, incoming.session_id)
+                session = await service.resolve_or_create_session(
+                    user_id=user.id,
+                    session_id=incoming.session_id,
+                    persona_id=persona.id,
+                )
                 previous_state = await service.load_state(session.id)
 
                 await service.append_event(
@@ -139,8 +172,13 @@ async def chat_socket(websocket: WebSocket) -> None:
 
                 user_id = user.id
                 session_id = session.id
+                persona_id = persona.id
                 state = state_update.state
                 sentiment_score = state_update.sentiment_score
+                persona_name = persona.name
+                persona_system_prompt = persona.system_prompt
+                persona_style_prompt = persona.style_prompt
+                persona_temperature = persona.temperature
 
             await _remember_if_needed(
                 user_id=user_id,
@@ -163,6 +201,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                     "type": "meta",
                     "user_id": user_id,
                     "session_id": session_id,
+                    "persona_id": persona_id,
                     "state": state.model_dump(mode="json"),
                 }
             )
@@ -176,6 +215,10 @@ async def chat_socket(websocket: WebSocket) -> None:
                     user_message=incoming.message,
                     state=state,
                     rag_context=rag_context.to_prompt_text(),
+                    persona_name=persona_name,
+                    persona_system_prompt=persona_system_prompt,
+                    persona_style_prompt=persona_style_prompt,
+                    persona_temperature=persona_temperature,
                     memory_hint=memory_hint,
                 ):
                     if not chunk:
@@ -195,6 +238,10 @@ async def chat_socket(websocket: WebSocket) -> None:
                     user_message=incoming.message,
                     state=state,
                     rag_context=rag_context.to_prompt_text(),
+                    persona_name=persona_name,
+                    persona_system_prompt=persona_system_prompt,
+                    persona_style_prompt=persona_style_prompt,
+                    persona_temperature=persona_temperature,
                     memory_hint=memory_hint,
                 )
                 chunk_count = 1
@@ -226,6 +273,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 message=assistant_message,
                 user_id=user_id,
                 session_id=session_id,
+                persona_id=persona_id,
                 state=state,
                 created_at=datetime.now(timezone.utc),
                 latency_ms=latency_ms,

@@ -26,8 +26,26 @@ class SessionService:
         resolved_id = session_id or str(uuid.uuid4())
         session = await self.db.get(ChatSession, resolved_id)
         if session is None:
-            session = ChatSession(id=resolved_id, user_id=user_id, message_count=0)
+            raise RuntimeError("resolve_session requires persona_id for new session creation.")
+        return session
+
+    async def resolve_or_create_session(
+        self,
+        *,
+        user_id: str,
+        session_id: str | None,
+        persona_id: str,
+    ) -> ChatSession:
+        resolved_id = session_id or str(uuid.uuid4())
+        session = await self.db.get(ChatSession, resolved_id)
+        if session is None:
+            session = ChatSession(id=resolved_id, user_id=user_id, persona_id=persona_id, message_count=0)
             self.db.add(session)
+            await self.db.flush()
+            return session
+
+        if session.persona_id != persona_id:
+            session.persona_id = persona_id
             await self.db.flush()
         return session
 
