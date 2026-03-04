@@ -6,8 +6,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev:web": "npm run dev -w apps/web",
-    "build:web": "npm run build -w apps/web",
-    "lint:web": "npm run lint -w apps/web"
+    "dev:web": "npm exec --workspace apps/web next dev",
+    "build:web": "npm exec --workspace apps/web next build",
+    "lint:web": "npm exec --workspace apps/web next lint"
   }
 }
