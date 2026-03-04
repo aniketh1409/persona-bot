@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from app.schemas import EmotionalState
@@ -28,8 +29,29 @@ class LlmService:
         rag_context: str,
         memory_hint: str | None = None,
     ) -> str:
+        chunks: list[str] = []
+        async for chunk in self.stream_reply(
+            user_message=user_message,
+            state=state,
+            rag_context=rag_context,
+            memory_hint=memory_hint,
+        ):
+            chunks.append(chunk)
+        return "".join(chunks).strip()
+
+    async def stream_reply(
+        self,
+        *,
+        user_message: str,
+        state: EmotionalState,
+        rag_context: str,
+        memory_hint: str | None = None,
+    ) -> AsyncIterator[str]:
+        fallback = self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
         if self.client is None:
-            return self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
+            for chunk in self._chunk_text(fallback):
+                yield chunk
+            return
 
         system_prompt = (
             "You are PersonaBot, an emotionally adaptive assistant. "
@@ -42,21 +64,30 @@ class LlmService:
         )
 
         try:
-            response = await self.client.chat.completions.create(
+            stream = await self.client.chat.completions.create(
                 model=self.settings.openai_model,
                 temperature=0.6,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
+                stream=True,
             )
+            produced = False
+            async for part in stream:
+                if not getattr(part, "choices", None):
+                    continue
+                delta = getattr(part.choices[0].delta, "content", None)
+                if not delta:
+                    continue
+                produced = True
+                yield str(delta)
+            if not produced:
+                for chunk in self._chunk_text(fallback):
+                    yield chunk
         except Exception:
-            return self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
-
-        content = response.choices[0].message.content if response.choices else None
-        if not content:
-            return self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
-        return str(content).strip()
+            for chunk in self._chunk_text(fallback):
+                yield chunk
 
     @staticmethod
     def _fallback_reply(*, user_message: str, mood: str, memory_hint: str | None) -> str:
@@ -71,3 +102,7 @@ class LlmService:
 
         hint = f" {memory_hint}" if memory_hint else ""
         return f"{prefix}You said: {user_message}.{hint}"
+
+    @staticmethod
+    def _chunk_text(text: str, size: int = 24) -> list[str]:
+        return [text[i : i + size] for i in range(0, len(text), size)] or [""]

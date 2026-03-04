@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from time import perf_counter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
@@ -118,45 +119,105 @@ async def chat_socket(websocket: WebSocket) -> None:
                 await service.save_state(session.id, state_update.state)
 
                 memory_tags = memory_service.extract_tags(incoming.message)
-                await _remember_if_needed(
-                    user_id=user.id,
-                    session_id=session.id,
-                    role="user",
-                    message=incoming.message,
-                    tags=memory_tags,
-                )
-
                 recent_events = await service.recent_events(session.id, limit=12)
-                memories = await _recall_memories(user.id, incoming.message, memory_tags)
-                rag_context = build_rag_context(
-                    state=state_update.state,
-                    recent_events=recent_events,
-                    memories=memories,
-                )
-                memory_hint = pick_memory_hint(memories)
+
+                user_id = user.id
+                session_id = session.id
+                state = state_update.state
+                sentiment_score = state_update.sentiment_score
+
+            await _remember_if_needed(
+                user_id=user_id,
+                session_id=session_id,
+                role="user",
+                message=incoming.message,
+                tags=memory_tags,
+            )
+
+            memories = await _recall_memories(user_id, incoming.message, memory_tags)
+            rag_context = build_rag_context(
+                state=state,
+                recent_events=recent_events,
+                memories=memories,
+            )
+            memory_hint = pick_memory_hint(memories)
+
+            await websocket.send_json(
+                {
+                    "type": "meta",
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "state": state.model_dump(mode="json"),
+                }
+            )
+
+            started_at = perf_counter()
+            first_token_ms: float | None = None
+            chunk_count = 0
+            chunks: list[str] = []
+            try:
+                async for chunk in llm_service.stream_reply(
+                    user_message=incoming.message,
+                    state=state,
+                    rag_context=rag_context.to_prompt_text(),
+                    memory_hint=memory_hint,
+                ):
+                    if not chunk:
+                        continue
+                    chunk_count += 1
+                    chunks.append(chunk)
+                    if first_token_ms is None:
+                        first_token_ms = (perf_counter() - started_at) * 1000
+                    await websocket.send_json({"type": "token", "delta": chunk})
+            except Exception:
+                await websocket.send_json({"type": "error", "message": "reply streaming failed"})
+                continue
+
+            assistant_message = "".join(chunks).strip()
+            if not assistant_message:
                 assistant_message = await llm_service.generate_reply(
                     user_message=incoming.message,
-                    state=state_update.state,
+                    state=state,
                     rag_context=rag_context.to_prompt_text(),
                     memory_hint=memory_hint,
                 )
+                chunk_count = 1
+                first_token_ms = first_token_ms or (perf_counter() - started_at) * 1000
+            latency_ms = (perf_counter() - started_at) * 1000
 
-                await service.append_event(
-                    session_id=session.id,
-                    user_id=user.id,
+            async with db_session() as db:
+                service = SessionService(db)
+                session = await service.resolve_session(user_id, session_id)
+
+                assistant_event = await service.append_event(
+                    session_id=session_id,
+                    user_id=user_id,
                     role="assistant",
                     message=assistant_message,
-                    sentiment_score=state_update.sentiment_score,
+                    sentiment_score=sentiment_score,
                 )
                 await service.increment_message_count(session)
-
-                outgoing = ChatMessageOut(
-                    message=assistant_message,
-                    user_id=user.id,
-                    session_id=session.id,
-                    state=state_update.state,
-                    created_at=datetime.now(timezone.utc),
+                await service.save_turn_metric(
+                    session_id=session_id,
+                    user_id=user_id,
+                    assistant_event_id=assistant_event.id,
+                    latency_ms=latency_ms,
+                    first_token_ms=first_token_ms,
+                    chunk_count=chunk_count,
                 )
-            await websocket.send_json(outgoing.model_dump(mode="json"))
+
+            outgoing = ChatMessageOut(
+                message=assistant_message,
+                user_id=user_id,
+                session_id=session_id,
+                state=state,
+                created_at=datetime.now(timezone.utc),
+                latency_ms=latency_ms,
+                first_token_ms=first_token_ms,
+                chunk_count=chunk_count,
+            )
+            payload = outgoing.model_dump(mode="json")
+            payload["type"] = "done"
+            await websocket.send_json(payload)
     except WebSocketDisconnect:
         return

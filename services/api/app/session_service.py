@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import redis_client
-from app.models import ChatSession, ConversationEvent, RelationshipState, User
+from app.models import ChatSession, ChatTurnMetric, ConversationEvent, RelationshipState, User
 from app.schemas import EmotionalState
 
 
@@ -82,7 +82,7 @@ class SessionService:
         role: str,
         message: str,
         sentiment_score: float,
-    ) -> None:
+    ) -> ConversationEvent:
         event = ConversationEvent(
             id=str(uuid.uuid4()),
             session_id=session_id,
@@ -92,6 +92,29 @@ class SessionService:
             sentiment_score=sentiment_score,
         )
         self.db.add(event)
+        return event
+
+    async def save_turn_metric(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_event_id: str | None,
+        latency_ms: float,
+        first_token_ms: float | None,
+        chunk_count: int,
+    ) -> ChatTurnMetric:
+        metric = ChatTurnMetric(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            user_id=user_id,
+            assistant_event_id=assistant_event_id,
+            latency_ms=latency_ms,
+            first_token_ms=first_token_ms,
+            chunk_count=chunk_count,
+        )
+        self.db.add(metric)
+        return metric
 
     async def increment_message_count(self, session: ChatSession) -> ChatSession:
         session.message_count += 1

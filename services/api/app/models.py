@@ -51,3 +51,16 @@ class ConversationEvent(Base):
     message: Mapped[str] = mapped_column(Text)
     sentiment_score: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatTurnMetric(Base):
+    __tablename__ = "chat_turn_metrics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_sessions.id"), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    assistant_event_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("conversation_events.id"))
+    latency_ms: Mapped[float] = mapped_column(Float)
+    first_token_ms: Mapped[float | None] = mapped_column(Float)
+    chunk_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

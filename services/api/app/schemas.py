@@ -25,3 +25,6 @@ class ChatMessageOut(BaseModel):
     session_id: str
     state: EmotionalState
     created_at: datetime
+    latency_ms: float | None = None
+    first_token_ms: float | None = None
+    chunk_count: int | None = None
