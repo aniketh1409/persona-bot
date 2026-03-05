@@ -5,8 +5,11 @@ from app.schemas import EmotionalState
 
 
 class FakeSettings:
+    llm_provider = "openai"
     openai_api_key = ""
     openai_model = "fake-model"
+    ollama_base_url = "http://localhost:11434"
+    ollama_chat_model = "llama3.2:3b"
 
 
 class FakeResponseMessage:
@@ -72,6 +75,39 @@ class FakeStream:
         return FakeStreamChunk(value)
 
 
+class FakeOllamaResponse:
+    def __init__(self, lines: list[str], status_code: int = 200) -> None:
+        self._lines = lines
+        self.status_code = status_code
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        _ = (exc_type, exc, tb)
+        return False
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError("http error")
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+
+class FakeOllamaHttpClient:
+    def stream(self, method: str, path: str, json: dict):
+        _ = (method, path, json)
+        return FakeOllamaResponse(
+            [
+                '{"message":{"role":"assistant","content":"hey "},"done":false}',
+                '{"message":{"role":"assistant","content":"there"},"done":false}',
+                '{"done":true}',
+            ]
+        )
+
+
 def test_generate_reply_uses_fallback_without_openai_client() -> None:
     service = LlmService(FakeSettings())
     reply = asyncio.run(
@@ -110,3 +146,22 @@ def test_stream_reply_yields_multiple_chunks() -> None:
 
     chunks = asyncio.run(run_stream())
     assert chunks == ["Here ", "is ", "a model-driven reply."]
+
+
+def test_ollama_stream_reply_yields_chunks() -> None:
+    class OllamaSettings(FakeSettings):
+        llm_provider = "ollama"
+
+    async def run_stream() -> list[str]:
+        service = LlmService(OllamaSettings(), http_client=FakeOllamaHttpClient())
+        chunks: list[str] = []
+        async for chunk in service.stream_reply(
+            user_message="Hello",
+            state=EmotionalState(),
+            rag_context="state and memory context",
+        ):
+            chunks.append(chunk)
+        return chunks
+
+    chunks = asyncio.run(run_stream())
+    assert chunks == ["hey ", "there"]

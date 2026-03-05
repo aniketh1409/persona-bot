@@ -32,14 +32,21 @@ docker-compose.yml
 docker compose up -d
 ```
 
-2. Frontend install + run:
+2. Start Ollama (local free model):
+
+```bash
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+```
+
+3. Frontend install + run:
 
 ```bash
 npm install
 npm run dev:web
 ```
 
-3. Backend install + run:
+4. Backend install + run:
 
 ```bash
 cd services/api
@@ -66,6 +73,19 @@ Backend:
 - `redis` (ephemeral/session state)
 - `qdrant-client` (vector memory)
 - `openai`, `httpx`
+
+## Model Provider
+
+Default is local Ollama:
+- `LLM_PROVIDER=ollama`
+- `EMBEDDING_PROVIDER=ollama`
+- `OLLAMA_CHAT_MODEL=llama3.2:3b`
+- `OLLAMA_EMBEDDING_MODEL=nomic-embed-text`
+
+Optional paid fallback:
+- `LLM_PROVIDER=openai`
+- `EMBEDDING_PROVIDER=openai`
+- set `OPENAI_API_KEY`
 
 ## Database Migrations
 

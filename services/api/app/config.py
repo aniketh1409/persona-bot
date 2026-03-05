@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "persona_memories"
-    qdrant_vector_size: int = 1536
+    qdrant_vector_size: int = 768
     memory_top_k: int = 5
     memory_candidate_multiplier: int = 4
     memory_semantic_weight: float = 0.62
@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     memory_recency_half_life_hours: float = 72.0
     default_persona_id: str = "balanced"
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
+
+    llm_provider: str = "ollama"
+    embedding_provider: str = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_chat_model: str = "llama3.2:3b"
+    ollama_embedding_model: str = "nomic-embed-text"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"

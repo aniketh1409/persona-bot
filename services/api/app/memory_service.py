@@ -1,9 +1,12 @@
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import math
 import re
 from typing import TYPE_CHECKING, Any, Protocol
+
+import httpx
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -34,6 +37,40 @@ class OpenAIEmbeddingClient:
 
         response = await self._client.embeddings.create(model=self.model, input=text)
         return response.data[0].embedding
+
+
+class OllamaEmbeddingClient:
+    def __init__(self, settings: "Settings", http_client: httpx.AsyncClient | None = None) -> None:
+        self.model = settings.ollama_embedding_model
+        self.base_url = settings.ollama_base_url.rstrip("/")
+        self._client = http_client or httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
+
+    async def embed(self, text: str) -> list[float]:
+        # Preferred endpoint for recent Ollama versions.
+        response = await self._client.post(
+            "/api/embeddings",
+            json={"model": self.model, "prompt": text},
+        )
+        if response.status_code == 404:
+            # Compatibility with older/newer variants using /api/embed.
+            response = await self._client.post(
+                "/api/embed",
+                json={"model": self.model, "input": [text]},
+            )
+        response.raise_for_status()
+        payload = response.json()
+
+        embedding = payload.get("embedding")
+        if isinstance(embedding, list):
+            return [float(value) for value in embedding]
+
+        embeddings = payload.get("embeddings")
+        if isinstance(embeddings, list) and embeddings:
+            first = embeddings[0]
+            if isinstance(first, list):
+                return [float(value) for value in first]
+
+        raise RuntimeError(f"Unexpected embedding payload: {json.dumps(payload)[:200]}")
 
 
 @dataclass(frozen=True)

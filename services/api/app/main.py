@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
 from app.llm_service import LlmService
-from app.memory_service import MemoryChunk, MemoryService, OpenAIEmbeddingClient
+from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient, OpenAIEmbeddingClient
 from app.persona_service import PersonaService
 from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import ChatMessageIn, ChatMessageOut, PersonaOut
@@ -18,9 +18,14 @@ from app.session_service import SessionService
 from app.state_engine import update_emotional_state
 
 settings = get_settings()
+if settings.embedding_provider.lower() == "ollama":
+    memory_embedder = OllamaEmbeddingClient(settings)
+else:
+    memory_embedder = OpenAIEmbeddingClient(settings)
+
 memory_service = MemoryService(
     qdrant=qdrant_client,
-    embedder=OpenAIEmbeddingClient(settings),
+    embedder=memory_embedder,
     collection_name=settings.qdrant_collection,
     vector_size=settings.qdrant_vector_size,
     candidate_multiplier=settings.memory_candidate_multiplier,
