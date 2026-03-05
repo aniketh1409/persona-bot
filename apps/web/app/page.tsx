@@ -87,6 +87,7 @@ export default function HomePage() {
   const reconnectTimerRef = useRef<number | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const timelineRef = useRef<HTMLElement | null>(null);
 
   const wsUrl = useMemo(resolveWsUrl, []);
   const apiHttpBase = useMemo(() => resolveApiHttpBase(wsUrl), [wsUrl]);
@@ -104,6 +105,13 @@ export default function HomePage() {
   const [socketVersion, setSocketVersion] = useState(0);
   const [retryLabel, setRetryLabel] = useState<string | null>(null);
   const [retryPaused, setRetryPaused] = useState(false);
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
 
   useEffect(() => {
     const savedUserId = window.localStorage.getItem(USER_ID_KEY);
@@ -449,7 +457,7 @@ export default function HomePage() {
           </p>
         </section>
 
-        <section className="timeline" aria-live="polite">
+        <section className="timeline" aria-live="polite" ref={timelineRef}>
           {messages.length === 0 ? (
             <p className="placeholder">Send a message to start the stream.</p>
           ) : (
