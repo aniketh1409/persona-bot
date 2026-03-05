@@ -25,7 +25,7 @@ body {
 }
 
 .page {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -34,7 +34,8 @@ body {
 
 .shell {
   width: min(980px, 100%);
-  min-height: calc(100vh - 3rem);
+  height: calc(100vh - 3rem);
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   gap: 0.75rem;
@@ -282,10 +283,11 @@ h1 {
 @media (max-width: 840px) {
   .page {
     padding: 0.8rem;
+    height: 100vh;
   }
 
   .shell {
-    min-height: calc(100vh - 1.6rem);
+    height: calc(100vh - 1.6rem);
     border-radius: 14px;
   }
 
