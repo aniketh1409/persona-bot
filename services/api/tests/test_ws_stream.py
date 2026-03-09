@@ -331,3 +331,14 @@ def test_personas_endpoint_returns_defaults(monkeypatch) -> None:
     payload = response.json()
     assert len(payload) == 3
     assert payload[0]["id"] == "balanced"
+
+
+def test_history_endpoint_returns_events(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/history/some-session-id?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)

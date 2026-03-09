@@ -204,14 +204,15 @@ class LlmService:
         persona_style_prompt: str,
     ) -> tuple[str, str]:
         system_prompt = (
-            f"You are PersonaBot in {persona_name} persona mode. "
-            "Keep replies concise, emotionally adaptive, and consistent with state and memory context. "
-            f"{persona_system_prompt} {persona_style_prompt}"
+            f"{persona_system_prompt}\n\n"
+            f"Style: {persona_style_prompt}\n\n"
+            "Use the context below to stay consistent with the conversation history, "
+            "the user's emotional state, and any relevant memories. "
+            "Do not mention that you have access to state or memory data — just use it naturally."
         )
         user_prompt = (
             f"{rag_context}\n\n"
-            f"Latest user message:\n{user_message}\n\n"
-            "Generate a direct assistant reply."
+            f"{user_message}"
         )
         return system_prompt, user_prompt
 

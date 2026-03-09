@@ -32,6 +32,21 @@ class ChatMessageOut(BaseModel):
     chunk_count: int | None = None
 
 
+class HistoryEventOut(BaseModel):
+    role: str
+    message: str
+    created_at: datetime
+
+
+class SessionOut(BaseModel):
+    id: str
+    persona_id: str
+    message_count: int
+    created_at: datetime
+    last_active_at: datetime
+    preview: str
+
+
 class PersonaOut(BaseModel):
     id: str
     name: str

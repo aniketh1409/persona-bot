@@ -140,6 +140,31 @@ class SessionService:
         await self.db.flush()
         return session
 
+    async def list_sessions(self, user_id: str, limit: int = 20) -> list[ChatSession]:
+        stmt = (
+            select(ChatSession)
+            .where(ChatSession.user_id == user_id)
+            .order_by(ChatSession.last_active_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def session_preview(self, session_id: str) -> str:
+        stmt = (
+            select(ConversationEvent)
+            .where(ConversationEvent.session_id == session_id)
+            .where(ConversationEvent.role == "user")
+            .order_by(ConversationEvent.created_at.asc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        event = result.scalars().first()
+        if event is None:
+            return "Empty conversation"
+        text = event.message.strip().replace("\n", " ")
+        return text[:80] + ("..." if len(text) > 80 else "")
+
     async def recent_events(self, session_id: str, limit: int = 12) -> list[ConversationEvent]:
         stmt = (
             select(ConversationEvent)

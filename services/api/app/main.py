@@ -13,7 +13,7 @@ from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient, OpenAIEmbeddingClient
 from app.persona_service import PersonaService
 from app.rag_context import build_rag_context, pick_memory_hint
-from app.schemas import ChatMessageIn, ChatMessageOut, PersonaOut
+from app.schemas import ChatMessageIn, ChatMessageOut, HistoryEventOut, PersonaOut, SessionOut
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
 
@@ -139,6 +139,42 @@ async def personas() -> list[PersonaOut]:
                 temperature=row.temperature,
             )
             for row in rows
+        ]
+
+
+@app.get("/sessions/{user_id}", response_model=list[SessionOut])
+async def sessions(user_id: str) -> list[SessionOut]:
+    async with db_session() as db:
+        service = SessionService(db)
+        rows = await service.list_sessions(user_id)
+        result: list[SessionOut] = []
+        for row in rows:
+            preview = await service.session_preview(row.id)
+            result.append(
+                SessionOut(
+                    id=row.id,
+                    persona_id=row.persona_id,
+                    message_count=row.message_count,
+                    created_at=row.created_at,
+                    last_active_at=row.last_active_at,
+                    preview=preview,
+                )
+            )
+        return result
+
+
+@app.get("/history/{session_id}", response_model=list[HistoryEventOut])
+async def history(session_id: str, limit: int = 50) -> list[HistoryEventOut]:
+    async with db_session() as db:
+        service = SessionService(db)
+        events = await service.recent_events(session_id, limit=limit)
+        return [
+            HistoryEventOut(
+                role=event.role,
+                message=event.message,
+                created_at=event.created_at,
+            )
+            for event in events
         ]
 
 
