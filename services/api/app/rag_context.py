@@ -36,7 +36,7 @@ def build_rag_context(
         history_summary = "No recent events."
     else:
         history_lines = []
-        for event in recent_events[-8:]:
+        for event in recent_events[-12:]:
             role = getattr(event, "role", "unknown")
             message = str(getattr(event, "message", "")).strip().replace("\n", " ")
             history_lines.append(f"{role}: {message}")

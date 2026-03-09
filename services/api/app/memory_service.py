@@ -16,7 +16,21 @@ MEMORY_TAG_RULES: dict[str, set[str]] = {
     "preference": {"like", "love", "prefer", "favorite", "enjoy"},
     "trigger": {"insecure", "worried", "afraid", "panic", "embarrassed"},
     "goal": {"goal", "plan", "trying to", "improve", "learn", "build"},
+    "fatigue": {"tired", "exhausted", "drained", "sleepy", "burnt out", "burned out"},
+    "hunger": {"hungry", "starving", "hngry", "hngryy"},
+    "self_worth": {"unloveable", "unlovable", "unloved", "worthless", "not enough", "unwanted"},
+    "loneliness": {"alone", "lonely", "isolated"},
 }
+
+PERSONAL_DISCLOSURE_PATTERNS: tuple[str, ...] = (
+    "i am",
+    "i'm",
+    "im",
+    "i feel",
+    "i've been",
+    "ive been",
+    "my",
+)
 
 
 class EmbeddingClient(Protocol):
@@ -141,6 +155,8 @@ class MemoryService:
             return True
         if tags:
             return True
+        if self.is_personal_disclosure(message):
+            return True
         return len(message) >= 80
 
     def compute_importance(self, *, message: str, tags: list[str]) -> float:
@@ -149,6 +165,10 @@ class MemoryService:
 
         if "trigger" in tags or "stress" in tags:
             score += 0.25
+        if "self_worth" in tags or "loneliness" in tags:
+            score += 0.25
+        if "fatigue" in tags or "hunger" in tags:
+            score += 0.12
         if "goal" in tags:
             score += 0.20
         if "preference" in tags:
@@ -161,7 +181,7 @@ class MemoryService:
         elif len(message) > 80:
             score += 0.04
 
-        if any(token in lowered for token in {" i ", " i'm ", " ive ", " my ", " me "}):
+        if self.is_personal_disclosure(message):
             score += 0.08
         if "because" in lowered or "since" in lowered:
             score += 0.04
@@ -276,6 +296,10 @@ class MemoryService:
         collapsed = re.sub(r"\s+", " ", message.lower().strip())
         alnum = re.sub(r"[^a-z0-9 ]+", "", collapsed)
         return alnum.strip()
+
+    def is_personal_disclosure(self, message: str) -> bool:
+        lowered = f" {message.lower().strip()} "
+        return any(f" {pattern} " in lowered for pattern in PERSONAL_DISCLOSURE_PATTERNS)
 
     @staticmethod
     def message_hash(normalized_message: str) -> str:

@@ -218,7 +218,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 await service.save_state(session.id, state_update.state)
 
                 memory_tags = memory_service.extract_tags(incoming.message)
-                recent_events = await service.recent_events(session.id, limit=12)
+                recent_events = await service.recent_events(session.id, limit=20)
 
                 user_id = user.id
                 session_id = session.id

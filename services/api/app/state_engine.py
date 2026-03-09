@@ -3,7 +3,23 @@ from dataclasses import dataclass
 from app.schemas import EmotionalState
 
 POSITIVE_TOKENS = {"thanks", "thank you", "great", "awesome", "love", "nice", "good", "helpful", "appreciate"}
-NEGATIVE_TOKENS = {"hate", "bad", "angry", "annoyed", "stupid", "terrible", "upset", "sad", "frustrated"}
+NEGATIVE_TOKENS = {
+    "hate",
+    "bad",
+    "angry",
+    "annoyed",
+    "stupid",
+    "terrible",
+    "upset",
+    "sad",
+    "frustrated",
+    "tired",
+    "drained",
+    "lonely",
+    "unloveable",
+    "unlovable",
+    "unloved",
+}
 
 
 @dataclass(frozen=True)

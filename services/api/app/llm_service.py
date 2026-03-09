@@ -20,10 +20,13 @@ class LlmService:
         self.settings = settings
         self.provider = settings.llm_provider.lower()
         self.client = client
-        self.http_client = http_client or httpx.AsyncClient(base_url=settings.ollama_base_url.rstrip("/"), timeout=90.0)
+        self.http_client = http_client or httpx.AsyncClient(
+            base_url=settings.ollama_base_url.rstrip("/"),
+            timeout=90.0,
+        )
 
         if self.provider == "openai" and self.client is None and settings.openai_api_key:
-            from openai import AsyncOpenAI  # Lazy import for local test environments.
+            from openai import AsyncOpenAI
 
             self.client = AsyncOpenAI(api_key=settings.openai_api_key)
 
@@ -203,16 +206,27 @@ class LlmService:
         persona_system_prompt: str,
         persona_style_prompt: str,
     ) -> tuple[str, str]:
+        _ = persona_name
         system_prompt = (
             f"{persona_system_prompt}\n\n"
             f"Style: {persona_style_prompt}\n\n"
-            "Use the context below to stay consistent with the conversation history, "
-            "the user's emotional state, and any relevant memories. "
-            "Do not mention that you have access to state or memory data — just use it naturally."
+            "Grounding rules:\n"
+            "- Reply to the latest user message first.\n"
+            "- Use recent conversation and memories only to stay consistent.\n"
+            "- If context is weak or ambiguous, ask a short clarifying question instead of guessing.\n"
+            "- Do not invent personal experiences, physical actions, possessions, locations, dreams, meals, sleep, or events.\n"
+            "- Do not pretend you did something unless the conversation already established it.\n"
+            "- If the user shares something emotional, respond to that directly before changing topics.\n"
+            "- If recent conversation and long-term memory conflict, trust the recent conversation.\n"
+            "- Do not mention that you have access to state or memory data; just use it naturally."
         )
         user_prompt = (
+            "CONTEXT\n"
             f"{rag_context}\n\n"
-            f"{user_message}"
+            "LATEST USER MESSAGE\n"
+            f"{user_message}\n\n"
+            "TASK\n"
+            "Write the next assistant reply. Stay grounded in the latest user message and the provided context."
         )
         return system_prompt, user_prompt
 

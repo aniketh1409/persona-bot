@@ -108,6 +108,20 @@ def test_extract_tags_finds_multiple_categories() -> None:
     assert "preference" in tags
 
 
+def test_extract_tags_catches_short_emotional_disclosures() -> None:
+    service = MemoryService(
+        qdrant=FakeQdrant(),
+        embedder=FakeEmbedder(),
+        collection_name="test",
+        vector_size=3,
+    )
+
+    tags = service.extract_tags("im lowkey hngryy and tired and unloveable")
+    assert "hunger" in tags
+    assert "fatigue" in tags
+    assert "self_worth" in tags
+
+
 def test_should_index_memory_only_for_user() -> None:
     service = MemoryService(
         qdrant=FakeQdrant(),
@@ -119,6 +133,7 @@ def test_should_index_memory_only_for_user() -> None:
     assert service.should_index_memory("assistant", "anything", ["goal"]) is False
     assert service.should_index_memory("user", "short", []) is False
     assert service.should_index_memory("user", "this sentence has meaningful detail", ["goal"]) is True
+    assert service.should_index_memory("user", "im tired and unloveable", ["fatigue", "self_worth"]) is True
 
 
 def test_store_and_recall_memory() -> None:

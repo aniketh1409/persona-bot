@@ -165,3 +165,18 @@ def test_ollama_stream_reply_yields_chunks() -> None:
 
     chunks = asyncio.run(run_stream())
     assert chunks == ["hey ", "there"]
+
+
+def test_build_prompts_adds_grounding_rules() -> None:
+    system_prompt, user_prompt = LlmService._build_prompts(
+        user_message="im tired and unloveable",
+        rag_context="Recent conversation:\nuser: im tired",
+        persona_name="Balanced",
+        persona_system_prompt="stay casual",
+        persona_style_prompt="keep it short",
+    )
+
+    assert "Do not invent personal experiences" in system_prompt
+    assert "Reply to the latest user message first." in system_prompt
+    assert "LATEST USER MESSAGE" in user_prompt
+    assert "im tired and unloveable" in user_prompt
