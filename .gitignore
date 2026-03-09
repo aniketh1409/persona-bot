@@ -33,3 +33,7 @@ build/
 
 # Local data
 data/
+
+# Local agent docs
+AGENT.md
+ARCHITECTURE.md
