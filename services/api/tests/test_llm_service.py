@@ -176,10 +176,11 @@ def test_build_prompts_adds_grounding_rules() -> None:
         persona_style_prompt="keep it short",
     )
 
-    assert "Do not invent personal experiences" in system_prompt
-    assert "Reply to the latest user message first." in system_prompt
-    assert "LATEST USER MESSAGE" in user_prompt
+    assert "Do not invent experiences" in system_prompt
+    assert "Your name is Balanced" in system_prompt
+    assert "You are NOT the user" in system_prompt
     assert "im tired and unloveable" in user_prompt
+    assert "Balanced, the user says:" in user_prompt
 
 
 def test_build_prompts_includes_tier_and_backstory() -> None:

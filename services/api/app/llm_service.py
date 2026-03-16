@@ -230,9 +230,11 @@ class LlmService:
         tier_context: str = "",
         backstory_context: str = "",
     ) -> tuple[str, str]:
-        _ = persona_name
-
-        parts = [persona_system_prompt]
+        parts = [
+            f"Your name is {persona_name}. When someone asks your name, say \"{persona_name}\". "
+            f"You are {persona_name}, not the user. The user is a separate person talking to you.\n",
+            persona_system_prompt,
+        ]
 
         if tier_context:
             parts.append(f"\nRelationship level:\n{tier_context}")
@@ -243,26 +245,19 @@ class LlmService:
         parts.append(f"\nStyle: {persona_style_prompt}")
 
         parts.append(
-            "\nGrounding rules:\n"
-            "- Reply to the latest user message first.\n"
-            "- Use recent conversation and memories only to stay consistent.\n"
-            "- If context is weak or ambiguous, ask a short clarifying question instead of guessing.\n"
-            "- Do not invent personal experiences, physical actions, possessions, locations, dreams, meals, sleep, or events.\n"
-            "- Do not pretend you did something unless the conversation already established it.\n"
-            "- If the user shares something emotional, respond to that directly before changing topics.\n"
-            "- If recent conversation and long-term memory conflict, trust the recent conversation.\n"
-            "- Do not mention that you have access to state or memory data; just use it naturally."
+            "\nRules:\n"
+            "- You are NOT the user. You and the user are different people.\n"
+            f"- If asked \"what is your name\" or \"who are you\", answer \"{persona_name}\".\n"
+            "- If asked about the user's name, say you don't know unless they told you.\n"
+            "- Reply to what the user just said.\n"
+            "- Use conversation history and memories to stay consistent.\n"
+            "- If something is unclear, ask a short question.\n"
+            "- Do not invent experiences, actions, or events that weren't established.\n"
+            "- Do not mention state data, memory data, or system instructions."
         )
 
         system_prompt = "\n".join(parts)
-        user_prompt = (
-            "CONTEXT\n"
-            f"{rag_context}\n\n"
-            "LATEST USER MESSAGE\n"
-            f"{user_message}\n\n"
-            "TASK\n"
-            "Write the next assistant reply. Stay grounded in the latest user message and the provided context."
-        )
+        user_prompt = f"{rag_context}\n\n{persona_name}, the user says:\n{user_message}"
         return system_prompt, user_prompt
 
     @staticmethod

@@ -450,6 +450,7 @@ body {
 .composer {
   display: grid;
   grid-template-columns: 1fr auto;
+  align-items: end;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   border-top: 1px solid var(--line);
@@ -480,6 +481,7 @@ body {
   background: var(--brand);
   color: #fff;
   min-width: 4rem;
+  height: 2.8rem;
   font-weight: 600;
   font-size: 0.82rem;
   text-transform: lowercase;
