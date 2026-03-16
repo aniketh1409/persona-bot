@@ -180,3 +180,20 @@ def test_build_prompts_adds_grounding_rules() -> None:
     assert "Reply to the latest user message first." in system_prompt
     assert "LATEST USER MESSAGE" in user_prompt
     assert "im tired and unloveable" in user_prompt
+
+
+def test_build_prompts_includes_tier_and_backstory() -> None:
+    system_prompt, _ = LlmService._build_prompts(
+        user_message="hey",
+        rag_context="context",
+        persona_name="Kael",
+        persona_system_prompt="You are Kael.",
+        persona_style_prompt="short sentences",
+        tier_context="This person is a confidant.",
+        backstory_context="You once failed a student.",
+    )
+
+    assert "Relationship level:" in system_prompt
+    assert "This person is a confidant." in system_prompt
+    assert "Personal history" in system_prompt
+    assert "You once failed a student." in system_prompt

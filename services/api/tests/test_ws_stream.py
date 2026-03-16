@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi.testclient import TestClient
 
@@ -16,13 +16,45 @@ class FakeUser:
 class FakeSession:
     id: str
     user_id: str
-    persona_id: str = "balanced"
+    persona_id: str = "kael"
+    character_id: str | None = "kael"
     message_count: int = 0
 
 
 @dataclass
 class FakeEvent:
     id: str
+
+
+@dataclass
+class FakeCharacter:
+    id: str
+    name: str
+    archetype: str = ""
+    description: str = ""
+    backstory: str = ""
+    system_prompt: str = ""
+    style_prompt: str = ""
+    temperature: float = 0.7
+    starting_trust: float = 0.5
+    starting_affection: float = 0.5
+    starting_energy: float = 0.6
+    baseline_mood: str = "neutral"
+    is_default: bool = False
+
+
+@dataclass
+class FakeRelationship:
+    id: str = "rel-1"
+    user_id: str = ""
+    character_id: str = ""
+    trust: float = 0.5
+    affection: float = 0.5
+    energy: float = 0.6
+    current_mood: str = "neutral"
+    baseline_mood: str = "neutral"
+    tier: int = 2
+    message_count: int = 0
 
 
 class FakeSessionService:
@@ -69,13 +101,12 @@ class FakeSessionService:
         user_id: str,
         session_id: str | None,
         persona_id: str,
+        character_id: str | None = None,
     ) -> FakeSession:
         session = await self.resolve_session(user_id=user_id, session_id=session_id)
         session.persona_id = persona_id
+        session.character_id = character_id
         return session
-
-    async def load_state(self, _session_id: str) -> EmotionalState:
-        return EmotionalState()
 
     async def append_event(
         self,
@@ -92,9 +123,6 @@ class FakeSessionService:
         session.message_count += 1
         return session
 
-    async def save_state(self, session_id: str, state: EmotionalState) -> None:
-        _ = (session_id, state)
-
     async def recent_events(self, session_id: str, limit: int = 12) -> list[object]:
         _ = (session_id, limit)
         return []
@@ -110,6 +138,58 @@ class FakeSessionService:
         chunk_count: int,
     ) -> None:
         _ = (session_id, user_id, assistant_event_id, latency_ms, first_token_ms, chunk_count)
+
+
+class FakeCharacterService:
+    characters = {
+        "kael": FakeCharacter("kael", "Kael", is_default=True, system_prompt="system::Kael", style_prompt="style::Kael"),
+        "lyra": FakeCharacter("lyra", "Lyra", system_prompt="system::Lyra", style_prompt="style::Lyra"),
+        "vex": FakeCharacter("vex", "Vex", system_prompt="system::Vex", style_prompt="style::Vex"),
+    }
+
+    def __init__(self, _db) -> None:
+        pass
+
+    async def list_characters(self) -> list[FakeCharacter]:
+        return [self.characters["kael"], self.characters["lyra"], self.characters["vex"]]
+
+    async def get_character(self, character_id: str) -> FakeCharacter | None:
+        return self.characters.get(character_id)
+
+    async def resolve_character(self, character_id: str | None) -> FakeCharacter:
+        if character_id and character_id in self.characters:
+            return self.characters[character_id]
+        return self.characters["kael"]
+
+    async def load_relationship(self, user_id: str, character_id: str) -> FakeRelationship:
+        return FakeRelationship(user_id=user_id, character_id=character_id)
+
+    async def save_relationship(self, rel: FakeRelationship) -> None:
+        pass
+
+    async def increment_message_count(self, rel: FakeRelationship) -> None:
+        rel.message_count += 1
+
+    def to_emotional_state(self, rel: FakeRelationship) -> EmotionalState:
+        return EmotionalState(
+            baseline_mood=rel.baseline_mood,
+            current_mood=rel.current_mood,
+            trust=rel.trust,
+            affection=rel.affection,
+            energy=rel.energy,
+        )
+
+    def apply_state_update(self, rel: FakeRelationship, state: EmotionalState) -> None:
+        rel.trust = state.trust
+        rel.affection = state.affection
+        rel.energy = state.energy
+        rel.current_mood = state.current_mood
+
+    def get_tier_context(self, tier: int) -> str:
+        return f"tier {tier} context"
+
+    async def list_relationships(self, user_id: str) -> list[FakeRelationship]:
+        return []
 
 
 class FakeMemoryService:
@@ -144,21 +224,18 @@ class FakeLlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
-        persona_name: str = "Balanced",
+        persona_name: str = "Kael",
         persona_system_prompt: str = "",
         persona_style_prompt: str = "",
         persona_temperature: float | None = None,
         memory_hint: str | None = None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ):
         _ = (
-            user_message,
-            state,
-            rag_context,
-            persona_name,
-            persona_system_prompt,
-            persona_style_prompt,
-            persona_temperature,
-            memory_hint,
+            user_message, state, rag_context, persona_name,
+            persona_system_prompt, persona_style_prompt, persona_temperature,
+            memory_hint, tier_context, backstory_context,
         )
         yield "token-one "
         yield "token-two"
@@ -169,56 +246,20 @@ class FakeLlmService:
         user_message: str,
         state: EmotionalState,
         rag_context: str,
-        persona_name: str = "Balanced",
+        persona_name: str = "Kael",
         persona_system_prompt: str = "",
         persona_style_prompt: str = "",
         persona_temperature: float | None = None,
         memory_hint: str | None = None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> str:
         _ = (
-            user_message,
-            state,
-            rag_context,
-            persona_name,
-            persona_system_prompt,
-            persona_style_prompt,
-            persona_temperature,
-            memory_hint,
+            user_message, state, rag_context, persona_name,
+            persona_system_prompt, persona_style_prompt, persona_temperature,
+            memory_hint, tier_context, backstory_context,
         )
         return "token-one token-two"
-
-
-class FakePersona:
-    def __init__(self, persona_id: str, name: str, temperature: float, is_default: bool = False) -> None:
-        self.id = persona_id
-        self.name = name
-        self.description = f"{name} persona"
-        self.system_prompt = f"system::{name}"
-        self.style_prompt = f"style::{name}"
-        self.temperature = temperature
-        self.is_default = is_default
-
-
-class FakePersonaService:
-    personas = {
-        "balanced": FakePersona("balanced", "Balanced", 0.6, is_default=True),
-        "coach": FakePersona("coach", "Coach", 0.65),
-        "warm": FakePersona("warm", "Warm", 0.7),
-    }
-
-    def __init__(self, _db) -> None:
-        pass
-
-    async def ensure_defaults(self) -> None:
-        return
-
-    async def list_personas(self) -> list[FakePersona]:
-        return [self.personas["balanced"], self.personas["coach"], self.personas["warm"]]
-
-    async def resolve_persona(self, requested_persona_id: str | None) -> FakePersona:
-        if requested_persona_id and requested_persona_id in self.personas:
-            return self.personas[requested_persona_id]
-        return self.personas["balanced"]
 
 
 @asynccontextmanager
@@ -244,7 +285,7 @@ def _patch_runtime(monkeypatch) -> None:
 
     monkeypatch.setattr(main_module, "db_session", fake_db_session)
     monkeypatch.setattr(main_module, "SessionService", FakeSessionService)
-    monkeypatch.setattr(main_module, "PersonaService", FakePersonaService)
+    monkeypatch.setattr(main_module, "CharacterService", FakeCharacterService)
     monkeypatch.setattr(main_module, "memory_service", FakeMemoryService())
     monkeypatch.setattr(main_module, "llm_service", FakeLlmService())
 
@@ -265,8 +306,9 @@ def test_websocket_stream_event_order(monkeypatch) -> None:
     assert event_types[-1] == "done"
     assert event_types.count("token") >= 1
     assert events[-1]["chunk_count"] == 2
-    assert events[0]["persona_id"] == "balanced"
-    assert events[-1]["persona_id"] == "balanced"
+    # character_id should be kael (default)
+    assert events[0]["character_id"] == "kael"
+    assert events[-1]["character_id"] == "kael"
 
 
 def test_websocket_preserves_user_and_session_ids(monkeypatch) -> None:
@@ -295,14 +337,14 @@ def test_websocket_preserves_user_and_session_ids(monkeypatch) -> None:
     assert FakeSessionService.session_creations == 1
 
 
-def test_websocket_supports_persona_switching(monkeypatch) -> None:
+def test_websocket_supports_character_switching(monkeypatch) -> None:
     _patch_runtime(monkeypatch)
 
     with TestClient(main_module.app) as client:
         with client.websocket_connect("/ws/chat") as ws:
             ws.receive_json()
 
-            ws.send_json({"message": "first turn", "persona_id": "balanced"})
+            ws.send_json({"message": "first turn", "character_id": "kael"})
             first_events = _read_until_done(ws)
             first_done = first_events[-1]
 
@@ -310,18 +352,45 @@ def test_websocket_supports_persona_switching(monkeypatch) -> None:
                 {
                     "message": "second turn",
                     "user_id": first_done["user_id"],
-                    "session_id": first_done["session_id"],
-                    "persona_id": "coach",
+                    "character_id": "lyra",
                 }
             )
             second_events = _read_until_done(ws)
             second_done = second_events[-1]
 
-    assert first_done["persona_id"] == "balanced"
-    assert second_done["persona_id"] == "coach"
+    assert first_done["character_id"] == "kael"
+    assert second_done["character_id"] == "lyra"
 
 
-def test_personas_endpoint_returns_defaults(monkeypatch) -> None:
+def test_done_event_includes_tier(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        with client.websocket_connect("/ws/chat") as ws:
+            ws.receive_json()
+
+            ws.send_json({"message": "hello"})
+            events = _read_until_done(ws)
+
+    done = events[-1]
+    assert "tier" in done
+    assert "tier_label" in done
+    assert isinstance(done["tier"], int)
+
+
+def test_characters_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/characters")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 3
+    assert payload[0]["id"] == "kael"
+
+
+def test_personas_endpoint_legacy_compat(monkeypatch) -> None:
     _patch_runtime(monkeypatch)
 
     with TestClient(main_module.app) as client:
@@ -330,7 +399,6 @@ def test_personas_endpoint_returns_defaults(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 3
-    assert payload[0]["id"] == "balanced"
 
 
 def test_history_endpoint_returns_events(monkeypatch) -> None:

@@ -41,6 +41,8 @@ class LlmService:
         persona_style_prompt: str = "",
         persona_temperature: float | None = None,
         memory_hint: str | None = None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> str:
         chunks: list[str] = []
         async for chunk in self.stream_reply(
@@ -52,6 +54,8 @@ class LlmService:
             persona_style_prompt=persona_style_prompt,
             persona_temperature=persona_temperature,
             memory_hint=memory_hint,
+            tier_context=tier_context,
+            backstory_context=backstory_context,
         ):
             chunks.append(chunk)
         return "".join(chunks).strip()
@@ -67,6 +71,8 @@ class LlmService:
         persona_style_prompt: str = "",
         persona_temperature: float | None = None,
         memory_hint: str | None = None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> AsyncIterator[str]:
         fallback = self._fallback_reply(user_message=user_message, mood=state.current_mood, memory_hint=memory_hint)
         produced = False
@@ -78,6 +84,8 @@ class LlmService:
                 persona_system_prompt=persona_system_prompt,
                 persona_style_prompt=persona_style_prompt,
                 persona_temperature=persona_temperature,
+                tier_context=tier_context,
+                backstory_context=backstory_context,
             ):
                 produced = True
                 yield chunk
@@ -97,6 +105,8 @@ class LlmService:
         persona_system_prompt: str,
         persona_style_prompt: str,
         persona_temperature: float | None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> AsyncIterator[str]:
         if self.provider == "ollama":
             async for chunk in self._stream_ollama_reply(
@@ -106,6 +116,8 @@ class LlmService:
                 persona_system_prompt=persona_system_prompt,
                 persona_style_prompt=persona_style_prompt,
                 persona_temperature=persona_temperature,
+                tier_context=tier_context,
+                backstory_context=backstory_context,
             ):
                 yield chunk
             return
@@ -117,6 +129,8 @@ class LlmService:
             persona_system_prompt=persona_system_prompt,
             persona_style_prompt=persona_style_prompt,
             persona_temperature=persona_temperature,
+            tier_context=tier_context,
+            backstory_context=backstory_context,
         ):
             yield chunk
 
@@ -129,6 +143,8 @@ class LlmService:
         persona_system_prompt: str,
         persona_style_prompt: str,
         persona_temperature: float | None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> AsyncIterator[str]:
         if self.client is None:
             return
@@ -139,6 +155,8 @@ class LlmService:
             persona_name=persona_name,
             persona_system_prompt=persona_system_prompt,
             persona_style_prompt=persona_style_prompt,
+            tier_context=tier_context,
+            backstory_context=backstory_context,
         )
 
         stream = await self.client.chat.completions.create(
@@ -167,6 +185,8 @@ class LlmService:
         persona_system_prompt: str,
         persona_style_prompt: str,
         persona_temperature: float | None,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> AsyncIterator[str]:
         system_prompt, user_prompt = self._build_prompts(
             user_message=user_message,
@@ -174,6 +194,8 @@ class LlmService:
             persona_name=persona_name,
             persona_system_prompt=persona_system_prompt,
             persona_style_prompt=persona_style_prompt,
+            tier_context=tier_context,
+            backstory_context=backstory_context,
         )
 
         payload = {
@@ -205,12 +227,23 @@ class LlmService:
         persona_name: str,
         persona_system_prompt: str,
         persona_style_prompt: str,
+        tier_context: str = "",
+        backstory_context: str = "",
     ) -> tuple[str, str]:
         _ = persona_name
-        system_prompt = (
-            f"{persona_system_prompt}\n\n"
-            f"Style: {persona_style_prompt}\n\n"
-            "Grounding rules:\n"
+
+        parts = [persona_system_prompt]
+
+        if tier_context:
+            parts.append(f"\nRelationship level:\n{tier_context}")
+
+        if backstory_context:
+            parts.append(f"\nPersonal history (use naturally, don't dump):\n{backstory_context}")
+
+        parts.append(f"\nStyle: {persona_style_prompt}")
+
+        parts.append(
+            "\nGrounding rules:\n"
             "- Reply to the latest user message first.\n"
             "- Use recent conversation and memories only to stay consistent.\n"
             "- If context is weak or ambiguous, ask a short clarifying question instead of guessing.\n"
@@ -220,6 +253,8 @@ class LlmService:
             "- If recent conversation and long-term memory conflict, trust the recent conversation.\n"
             "- Do not mention that you have access to state or memory data; just use it naturally."
         )
+
+        system_prompt = "\n".join(parts)
         user_prompt = (
             "CONTEXT\n"
             f"{rag_context}\n\n"

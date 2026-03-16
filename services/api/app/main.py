@@ -7,13 +7,21 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 
+from app.character_service import CharacterService, compute_tier
 from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
 from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient, OpenAIEmbeddingClient
-from app.persona_service import PersonaService
 from app.rag_context import build_rag_context, pick_memory_hint
-from app.schemas import ChatMessageIn, ChatMessageOut, HistoryEventOut, PersonaOut, SessionOut
+from app.schemas import (
+    CharacterOut,
+    ChatMessageIn,
+    ChatMessageOut,
+    HistoryEventOut,
+    PersonaOut,
+    RelationshipOut,
+    SessionOut,
+)
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
 
@@ -41,16 +49,8 @@ llm_service = LlmService(settings)
 async def lifespan(_: FastAPI):
     await init_db()
     try:
-        async with db_session() as db:
-            persona_service = PersonaService(db)
-            await persona_service.ensure_defaults()
-    except Exception:
-        # Persona seed can be skipped in environments without DB.
-        pass
-    try:
         await memory_service.ensure_collection()
     except Exception:
-        # Qdrant or embedding service may be unavailable in local dev.
         pass
     yield
     await redis_client.aclose()
@@ -68,7 +68,7 @@ async def lifespan(_: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="PersonaBot API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="PersonaBot RPG API", version="0.2.0", lifespan=lifespan)
 allowed_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -94,7 +94,6 @@ async def _remember_if_needed(
 ) -> None:
     if not memory_service.should_index_memory(role, message, tags):
         return
-
     try:
         await memory_service.store_memory(
             user_id=user_id,
@@ -119,27 +118,58 @@ async def _recall_memories(user_id: str, message: str, tags: list[str]) -> list[
         return []
 
 
+# ---------------------------------------------------------------------------
+# REST endpoints
+# ---------------------------------------------------------------------------
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(status="ok", service="personabot-api")
 
 
-@app.get("/personas", response_model=list[PersonaOut])
-async def personas() -> list[PersonaOut]:
+@app.get("/characters", response_model=list[CharacterOut])
+async def characters() -> list[CharacterOut]:
     async with db_session() as db:
-        persona_service = PersonaService(db)
-        await persona_service.ensure_defaults()
-        rows = await persona_service.list_personas()
+        char_service = CharacterService(db)
+        rows = await char_service.list_characters()
         return [
-            PersonaOut(
+            CharacterOut(
                 id=row.id,
                 name=row.name,
+                archetype=row.archetype,
                 description=row.description,
-                is_default=row.is_default,
                 temperature=row.temperature,
+                is_default=row.is_default,
             )
             for row in rows
         ]
+
+
+@app.get("/relationships/{user_id}", response_model=list[RelationshipOut])
+async def relationships(user_id: str) -> list[RelationshipOut]:
+    async with db_session() as db:
+        char_service = CharacterService(db)
+        rels = await char_service.list_relationships(user_id)
+        result: list[RelationshipOut] = []
+        for rel in rels:
+            char = await char_service.get_character(rel.character_id)
+            tier_num, tier_label = compute_tier(rel.trust)
+            result.append(
+                RelationshipOut(
+                    character_id=rel.character_id,
+                    character_name=char.name if char else rel.character_id,
+                    archetype=char.archetype if char else None,
+                    trust=rel.trust,
+                    affection=rel.affection,
+                    energy=rel.energy,
+                    current_mood=rel.current_mood,
+                    tier=tier_num,
+                    tier_label=tier_label,
+                    message_count=rel.message_count,
+                )
+            )
+        return result
 
 
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])
@@ -153,6 +183,7 @@ async def sessions(user_id: str) -> list[SessionOut]:
             result.append(
                 SessionOut(
                     id=row.id,
+                    character_id=row.character_id,
                     persona_id=row.persona_id,
                     message_count=row.message_count,
                     created_at=row.created_at,
@@ -178,10 +209,33 @@ async def history(session_id: str, limit: int = 50) -> list[HistoryEventOut]:
         ]
 
 
+# Legacy endpoint for backwards compatibility
+@app.get("/personas", response_model=list[PersonaOut])
+async def personas() -> list[PersonaOut]:
+    async with db_session() as db:
+        char_service = CharacterService(db)
+        rows = await char_service.list_characters()
+        return [
+            PersonaOut(
+                id=row.id,
+                name=row.name,
+                description=row.description,
+                is_default=row.is_default,
+                temperature=row.temperature,
+            )
+            for row in rows
+        ]
+
+
+# ---------------------------------------------------------------------------
+# WebSocket chat handler
+# ---------------------------------------------------------------------------
+
+
 @app.websocket("/ws/chat")
 async def chat_socket(websocket: WebSocket) -> None:
     await websocket.accept()
-    await websocket.send_json({"type": "system", "message": "Connected to PersonaBot session service."})
+    await websocket.send_json({"type": "system", "message": "Connected."})
 
     try:
         while True:
@@ -189,21 +243,32 @@ async def chat_socket(websocket: WebSocket) -> None:
             try:
                 incoming = ChatMessageIn.model_validate(payload)
             except ValidationError as exc:
-                await websocket.send_json({"type": "error", "message": exc.errors()})
+                await websocket.send_json({"type": "error", "message": str(exc.errors())})
                 continue
+
+            # Resolve character_id (prefer character_id, fall back to persona_id for legacy)
+            requested_character_id = incoming.character_id or incoming.persona_id
 
             async with db_session() as db:
                 service = SessionService(db)
-                persona_service = PersonaService(db)
-                await persona_service.ensure_defaults()
-                persona = await persona_service.resolve_persona(incoming.persona_id)
+                char_service = CharacterService(db)
+
+                character = await char_service.resolve_character(requested_character_id)
                 user = await service.resolve_user(incoming.user_id)
+
+                # Load or create the per-user-per-character relationship
+                relationship = await char_service.load_relationship(user.id, character.id)
+
+                # Resolve session (tied to character)
                 session = await service.resolve_or_create_session(
                     user_id=user.id,
                     session_id=incoming.session_id,
-                    persona_id=persona.id,
+                    persona_id=None,
+                    character_id=character.id,
                 )
-                previous_state = await service.load_state(session.id)
+
+                # Build emotional state from relationship
+                previous_state = char_service.to_emotional_state(relationship)
 
                 await service.append_event(
                     session_id=session.id,
@@ -213,22 +278,33 @@ async def chat_socket(websocket: WebSocket) -> None:
                     sentiment_score=0.0,
                 )
                 session = await service.increment_message_count(session)
+                await char_service.increment_message_count(relationship)
 
-                state_update = update_emotional_state(previous_state, incoming.message, session.message_count)
-                await service.save_state(session.id, state_update.state)
+                # Update emotional state
+                state_update = update_emotional_state(
+                    previous_state, incoming.message, relationship.message_count
+                )
+                char_service.apply_state_update(relationship, state_update.state)
+                await char_service.save_relationship(relationship)
 
                 memory_tags = memory_service.extract_tags(incoming.message)
                 recent_events = await service.recent_events(session.id, limit=20)
 
+                # Snapshot values for use outside db session
                 user_id = user.id
                 session_id = session.id
-                persona_id = persona.id
+                character_id = character.id
                 state = state_update.state
                 sentiment_score = state_update.sentiment_score
-                persona_name = persona.name
-                persona_system_prompt = persona.system_prompt
-                persona_style_prompt = persona.style_prompt
-                persona_temperature = persona.temperature
+                tier = relationship.tier
+                tier_num, tier_label = compute_tier(state.trust)
+                char_name = character.name
+                char_system_prompt = character.system_prompt
+                char_style_prompt = character.style_prompt
+                char_temperature = character.temperature
+                tier_context = char_service.get_tier_context(tier)
+                # Only reveal backstory at Confidant level (tier 4+)
+                backstory_context = character.backstory if tier >= 4 else ""
 
             await _remember_if_needed(
                 user_id=user_id,
@@ -251,8 +327,11 @@ async def chat_socket(websocket: WebSocket) -> None:
                     "type": "meta",
                     "user_id": user_id,
                     "session_id": session_id,
-                    "persona_id": persona_id,
+                    "character_id": character_id,
+                    "persona_id": character_id,  # legacy compat
                     "state": state.model_dump(mode="json"),
+                    "tier": tier_num,
+                    "tier_label": tier_label,
                 }
             )
 
@@ -265,11 +344,13 @@ async def chat_socket(websocket: WebSocket) -> None:
                     user_message=incoming.message,
                     state=state,
                     rag_context=rag_context.to_prompt_text(),
-                    persona_name=persona_name,
-                    persona_system_prompt=persona_system_prompt,
-                    persona_style_prompt=persona_style_prompt,
-                    persona_temperature=persona_temperature,
+                    persona_name=char_name,
+                    persona_system_prompt=char_system_prompt,
+                    persona_style_prompt=char_style_prompt,
+                    persona_temperature=char_temperature,
                     memory_hint=memory_hint,
+                    tier_context=tier_context,
+                    backstory_context=backstory_context,
                 ):
                     if not chunk:
                         continue
@@ -288,11 +369,13 @@ async def chat_socket(websocket: WebSocket) -> None:
                     user_message=incoming.message,
                     state=state,
                     rag_context=rag_context.to_prompt_text(),
-                    persona_name=persona_name,
-                    persona_system_prompt=persona_system_prompt,
-                    persona_style_prompt=persona_style_prompt,
-                    persona_temperature=persona_temperature,
+                    persona_name=char_name,
+                    persona_system_prompt=char_system_prompt,
+                    persona_style_prompt=char_style_prompt,
+                    persona_temperature=char_temperature,
                     memory_hint=memory_hint,
+                    tier_context=tier_context,
+                    backstory_context=backstory_context,
                 )
                 chunk_count = 1
                 first_token_ms = first_token_ms or (perf_counter() - started_at) * 1000
@@ -323,8 +406,10 @@ async def chat_socket(websocket: WebSocket) -> None:
                 message=assistant_message,
                 user_id=user_id,
                 session_id=session_id,
-                persona_id=persona_id,
+                character_id=character_id,
                 state=state,
+                tier=tier_num,
+                tier_label=tier_label,
                 created_at=datetime.now(timezone.utc),
                 latency_ms=latency_ms,
                 first_token_ms=first_token_ms,
