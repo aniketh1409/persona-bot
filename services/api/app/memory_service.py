@@ -391,7 +391,7 @@ class MemoryService:
 
 def format_memory_context(memories: list[MemoryChunk]) -> str:
     if not memories:
-        return "No relevant long-term memory."
+        return ""
 
     lines = ["Relevant memories:"]
     for memory in memories:

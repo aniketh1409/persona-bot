@@ -12,13 +12,14 @@ class RagContext:
     memory_context: str
 
     def to_prompt_text(self) -> str:
-        return "\n\n".join(
-            [
-                f"State:\n{self.state_summary}",
-                f"Recent conversation:\n{self.recent_history}",
-                f"Long-term memory:\n{self.memory_context}",
-            ]
-        )
+        parts: list[str] = []
+        if self.recent_history:
+            parts.append(f"Recent conversation:\n{self.recent_history}")
+        if self.memory_context:
+            parts.append(f"Long-term memory:\n{self.memory_context}")
+        if not parts:
+            return "This is the start of a new conversation. You have no prior context about this person."
+        return "\n\n".join(parts)
 
 
 def build_rag_context(
@@ -33,7 +34,7 @@ def build_rag_context(
     )
 
     if not recent_events:
-        history_summary = "No recent events."
+        history_summary = ""
     else:
         history_lines = []
         for event in recent_events[-12:]:
