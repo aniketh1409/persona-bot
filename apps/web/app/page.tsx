@@ -36,6 +36,7 @@ type ServerEvent =
       latency_ms?: number;
       first_token_ms?: number;
       chunk_count?: number;
+      milestones_unlocked?: string[];
     }
   | { type: "token"; delta: string }
   | { type: "error"; message: string };
@@ -57,6 +58,26 @@ type SessionItem = {
   created_at: string;
   last_active_at: string;
   preview: string;
+};
+
+type ArcItem = {
+  id: string;
+  character_id: string;
+  title: string;
+  description: string;
+  trust_threshold: number;
+  affection_threshold: number;
+  message_count_threshold: number;
+  status: string;
+};
+
+type MilestoneItem = {
+  id: string;
+  character_id: string | null;
+  title: string;
+  description: string;
+  icon: string;
+  unlocked_at: string;
 };
 
 const USER_ID_KEY = "personabot.user_id";
@@ -132,6 +153,8 @@ export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<"select" | "chat">("select");
+  const [arcs, setArcs] = useState<ArcItem[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
 
   // -- Theme --
   useEffect(() => {
@@ -207,6 +230,33 @@ export default function HomePage() {
 
   useEffect(() => { void loadSessionList(); }, [loadSessionList]);
 
+  const loadArcList = useCallback(async () => {
+    const uid = userId || window.localStorage.getItem(USER_ID_KEY);
+    if (!uid || !selectedCharacterId) return;
+    try {
+      const res = await fetch(`${apiHttpBase}/arcs/${uid}/${selectedCharacterId}`);
+      if (!res.ok) return;
+      setArcs((await res.json()) as ArcItem[]);
+    } catch {
+      // best-effort
+    }
+  }, [apiHttpBase, selectedCharacterId, userId]);
+
+  const loadMilestones = useCallback(async () => {
+    const uid = userId || window.localStorage.getItem(USER_ID_KEY);
+    if (!uid) return;
+    try {
+      const res = await fetch(`${apiHttpBase}/milestones/${uid}`);
+      if (!res.ok) return;
+      setMilestones((await res.json()) as MilestoneItem[]);
+    } catch {
+      // best-effort
+    }
+  }, [apiHttpBase, userId]);
+
+  useEffect(() => { void loadArcList(); }, [loadArcList]);
+  useEffect(() => { void loadMilestones(); }, [loadMilestones]);
+
   // -- WebSocket --
   useEffect(() => {
     let active = true;
@@ -261,6 +311,8 @@ export default function HomePage() {
         activeAssistantIdRef.current = null;
         setIsAwaitingReply(false);
         void loadSessionList();
+        void loadArcList();
+        void loadMilestones();
         return;
       }
 
@@ -291,7 +343,7 @@ export default function HomePage() {
       if (wsRef.current === socket) wsRef.current = null;
       socket.close();
     };
-  }, [socketVersion, wsUrl, loadSessionList]);
+  }, [socketVersion, wsUrl, loadSessionList, loadArcList, loadMilestones]);
 
   // -- Handlers --
   function handleManualReconnect() {
@@ -304,6 +356,7 @@ export default function HomePage() {
   function handleSelectCharacter(charId: string) {
     setSelectedCharacterId(charId);
     setSessionId(null); setState(null); setMessages([]); setTier(1); setTierLabel("Stranger");
+    setArcs([]);
     window.localStorage.setItem(CHARACTER_ID_KEY, charId);
     window.localStorage.removeItem(SESSION_ID_KEY);
     setView("chat");
@@ -311,6 +364,7 @@ export default function HomePage() {
 
   function handleNewChat() {
     setSessionId(null); setState(null); setMessages([]); setTier(1); setTierLabel("Stranger");
+    setArcs([]);
     setInput(""); setIsAwaitingReply(false); activeAssistantIdRef.current = null;
     window.localStorage.removeItem(SESSION_ID_KEY);
     setSidebarOpen(false);
@@ -319,6 +373,7 @@ export default function HomePage() {
   function handleBackToSelect() {
     setView("select");
     setSelectedCharacterId(null); setSessionId(null); setState(null); setMessages([]);
+    setArcs([]);
     window.localStorage.removeItem(CHARACTER_ID_KEY);
     window.localStorage.removeItem(SESSION_ID_KEY);
   }
@@ -471,6 +526,25 @@ export default function HomePage() {
           <div className="tierTrack">
             <div className="tierFill" style={{ width: `${tierProgress(state?.trust ?? 0.5)}%` }} />
           </div>
+          <div className="arcChips">
+            {arcs.length === 0 ? (
+              <span className="arcChip muted">No active arcs yet</span>
+            ) : (
+              arcs.map((arc) => (
+                <span key={arc.id} className={`arcChip ${arc.status === "active" ? "active" : "locked"}`} title={arc.description}>
+                  {arc.title}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="milestoneRail">
+          {milestones.slice(0, 3).map((m) => (
+            <span key={m.id} className="milestoneChip" title={m.description}>
+              {m.icon} {m.title}
+            </span>
+          ))}
         </div>
 
         <section className="timeline" aria-live="polite" ref={timelineRef}>

@@ -361,6 +361,52 @@ body {
   transition: width 0.4s ease;
 }
 
+.arcChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.arcChip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  background: var(--surface);
+}
+
+.arcChip.active {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.arcChip.locked {
+  opacity: 0.65;
+}
+
+.arcChip.muted {
+  border-style: dashed;
+}
+
+.milestoneRail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem 1rem 0.45rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+}
+
+.milestoneChip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.64rem;
+  color: var(--text-secondary);
+  background: var(--surface);
+}
+
 /* ================================================================ */
 /* TIMELINE                                                         */
 /* ================================================================ */
