@@ -90,6 +90,34 @@ class UserArcProgress(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Milestone(Base):
+    __tablename__ = "milestones"
+    __table_args__ = (Index("ix_milestones_character", "character_id"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("characters.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    icon: Mapped[str] = mapped_column(String(16), default="*")
+    trust_threshold: Mapped[float] = mapped_column(Float, default=0.0)
+    affection_threshold: Mapped[float] = mapped_column(Float, default=0.0)
+    tier_threshold: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserMilestone(Base):
+    __tablename__ = "user_milestones"
+    __table_args__ = (
+        UniqueConstraint("user_id", "milestone_id", name="uq_user_milestone"),
+        Index("ix_user_milestones_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    milestone_id: Mapped[str] = mapped_column(String(64), ForeignKey("milestones.id"), index=True)
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
     __table_args__ = (Index("ix_chat_sessions_user_last_active", "user_id", "last_active_at"),)

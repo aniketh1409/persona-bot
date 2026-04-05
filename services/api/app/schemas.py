@@ -85,6 +85,15 @@ class ArcOut(BaseModel):
     status: str
 
 
+class MilestoneOut(BaseModel):
+    id: str
+    character_id: str | None
+    title: str
+    description: str
+    icon: str
+    unlocked_at: datetime
+
+
 class PersonaOut(BaseModel):
     """Legacy — kept for backwards compatibility."""
     id: str
