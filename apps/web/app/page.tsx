@@ -80,6 +80,13 @@ type MilestoneItem = {
   unlocked_at: string;
 };
 
+type JournalSummary = {
+  user_id: string;
+  active_arc_count: number;
+  completed_arc_count: number;
+  milestone_count: number;
+};
+
 const USER_ID_KEY = "personabot.user_id";
 const SESSION_ID_KEY = "personabot.session_id";
 const CHARACTER_ID_KEY = "personabot.character_id";
@@ -157,6 +164,7 @@ export default function HomePage() {
   const [arcs, setArcs] = useState<ArcItem[]>([]);
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
   const [milestoneFeed, setMilestoneFeed] = useState<string[]>([]);
+  const [journal, setJournal] = useState<JournalSummary | null>(null);
 
   // -- Theme --
   useEffect(() => {
@@ -256,8 +264,21 @@ export default function HomePage() {
     }
   }, [apiHttpBase, userId]);
 
+  const loadJournal = useCallback(async () => {
+    const uid = userId || window.localStorage.getItem(USER_ID_KEY);
+    if (!uid) return;
+    try {
+      const res = await fetch(`${apiHttpBase}/journal/${uid}`);
+      if (!res.ok) return;
+      setJournal((await res.json()) as JournalSummary);
+    } catch {
+      // best-effort
+    }
+  }, [apiHttpBase, userId]);
+
   useEffect(() => { void loadArcList(); }, [loadArcList]);
   useEffect(() => { void loadMilestones(); }, [loadMilestones]);
+  useEffect(() => { void loadJournal(); }, [loadJournal]);
   useEffect(() => { milestonesRef.current = milestones; }, [milestones]);
 
   // -- WebSocket --
@@ -327,6 +348,7 @@ export default function HomePage() {
         void loadSessionList();
         void loadArcList();
         void loadMilestones();
+        void loadJournal();
         return;
       }
 
@@ -357,7 +379,7 @@ export default function HomePage() {
       if (wsRef.current === socket) wsRef.current = null;
       socket.close();
     };
-  }, [socketVersion, wsUrl, loadSessionList, loadArcList, loadMilestones]);
+  }, [socketVersion, wsUrl, loadSessionList, loadArcList, loadMilestones, loadJournal]);
 
   // -- Handlers --
   function handleManualReconnect() {
@@ -560,6 +582,14 @@ export default function HomePage() {
             </span>
           ))}
         </div>
+
+        {journal ? (
+          <div className="journalRow">
+            <span>active arcs: {journal.active_arc_count}</span>
+            <span>completed arcs: {journal.completed_arc_count}</span>
+            <span>milestones: {journal.milestone_count}</span>
+          </div>
+        ) : null}
 
         {milestoneFeed.length > 0 ? (
           <div className="milestoneFeed">
