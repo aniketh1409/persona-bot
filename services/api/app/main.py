@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
 from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient, OpenAIEmbeddingClient
+from app.milestone_service import MilestoneService
 from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import (
     CharacterOut,
@@ -23,6 +24,7 @@ from app.schemas import (
     PersonaOut,
     RelationshipOut,
     SessionOut,
+    MilestoneOut,
 )
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
@@ -221,6 +223,24 @@ async def arcs(user_id: str, character_id: str) -> list[ArcOut]:
         ]
 
 
+@app.get("/milestones/{user_id}", response_model=list[MilestoneOut])
+async def milestones(user_id: str) -> list[MilestoneOut]:
+    async with db_session() as db:
+        milestone_service = MilestoneService(db)
+        rows = await milestone_service.list_user_milestones(user_id)
+        return [
+            MilestoneOut(
+                id=milestone.id,
+                character_id=milestone.character_id,
+                title=milestone.title,
+                description=milestone.description,
+                icon=milestone.icon,
+                unlocked_at=user_milestone.unlocked_at,
+            )
+            for milestone, user_milestone in rows
+        ]
+
+
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])
 async def sessions(user_id: str) -> list[SessionOut]:
     async with db_session() as db:
@@ -335,6 +355,11 @@ async def chat_socket(websocket: WebSocket) -> None:
                 )
                 char_service.apply_state_update(relationship, state_update.state)
                 await char_service.save_relationship(relationship)
+                milestone_service = MilestoneService(db)
+                newly_unlocked = await milestone_service.unlock_eligible(
+                    user_id=user.id,
+                    relationship=relationship,
+                )
 
                 memory_tags = memory_service.extract_tags(incoming.message)
                 recent_events = await service.recent_events(session.id, limit=20)
@@ -359,6 +384,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                     user_id=user_id,
                     relationship=relationship,
                 )
+                unlocked_milestone_ids = [m.id for m in newly_unlocked]
 
             await _remember_if_needed(
                 user_id=user_id,
@@ -472,6 +498,7 @@ async def chat_socket(websocket: WebSocket) -> None:
                 latency_ms=latency_ms,
                 first_token_ms=first_token_ms,
                 chunk_count=chunk_count,
+                milestones_unlocked=unlocked_milestone_ids,
             )
             payload = outgoing.model_dump(mode="json")
             payload["type"] = "done"

@@ -34,6 +34,7 @@ class ChatMessageOut(BaseModel):
     latency_ms: float | None = None
     first_token_ms: float | None = None
     chunk_count: int | None = None
+    milestones_unlocked: list[str] = Field(default_factory=list)
 
 
 class HistoryEventOut(BaseModel):

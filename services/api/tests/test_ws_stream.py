@@ -245,6 +245,37 @@ class FakeArcService:
         return ""
 
 
+class FakeMilestone:
+    def __init__(self, milestone_id: str) -> None:
+        self.id = milestone_id
+        self.character_id = "kael"
+        self.title = "Kael Opens Up"
+        self.description = "Reached confidant tier"
+        self.icon = "🗝️"
+
+
+class FakeUserMilestone:
+    def __init__(self) -> None:
+        from datetime import datetime, timezone
+
+        self.unlocked_at = datetime.now(timezone.utc)
+
+
+class FakeMilestoneService:
+    def __init__(self, _db) -> None:
+        pass
+
+    async def unlock_eligible(self, *, user_id: str, relationship: FakeRelationship):
+        _ = user_id
+        if relationship.tier >= 2:
+            return [FakeMilestone("kael_confidant")]
+        return []
+
+    async def list_user_milestones(self, user_id: str):
+        _ = user_id
+        return [(FakeMilestone("kael_confidant"), FakeUserMilestone())]
+
+
 class FakeLlmService:
     last_backstory_context: str = ""
 
@@ -319,6 +350,7 @@ def _patch_runtime(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "SessionService", FakeSessionService)
     monkeypatch.setattr(main_module, "CharacterService", FakeCharacterService)
     monkeypatch.setattr(main_module, "ArcService", FakeArcService)
+    monkeypatch.setattr(main_module, "MilestoneService", FakeMilestoneService)
     monkeypatch.setattr(main_module, "memory_service", FakeMemoryService())
     monkeypatch.setattr(main_module, "llm_service", FakeLlmService())
 
@@ -409,6 +441,7 @@ def test_done_event_includes_tier(monkeypatch) -> None:
     assert "tier" in done
     assert "tier_label" in done
     assert isinstance(done["tier"], int)
+    assert "milestones_unlocked" in done
 
 
 def test_websocket_includes_arc_context_in_prompt(monkeypatch) -> None:
@@ -470,6 +503,18 @@ def test_arcs_endpoint(monkeypatch) -> None:
     assert isinstance(payload, list)
     assert payload[0]["id"] == "kael_arc_1"
     assert payload[0]["status"] in {"active", "locked"}
+
+
+def test_milestones_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/milestones/user-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert payload[0]["id"] == "kael_confidant"
 
 
 def test_history_endpoint_returns_events(monkeypatch) -> None:
