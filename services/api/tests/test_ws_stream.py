@@ -326,7 +326,11 @@ class FakeLlmService:
 
 @asynccontextmanager
 async def fake_db_session():
-    yield object()
+    class _FakeDb:
+        async def scalar(self, _stmt):
+            return 0
+
+    yield _FakeDb()
 
 
 def _read_until_done(ws) -> list[dict]:
@@ -516,6 +520,18 @@ def test_milestones_endpoint(monkeypatch) -> None:
     payload = response.json()
     assert isinstance(payload, list)
     assert payload[0]["id"] == "kael_confidant"
+
+
+def test_journal_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/journal/user-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_id"] == "user-1"
+    assert payload["active_arc_count"] == 0
 
 
 def test_history_endpoint_returns_events(monkeypatch) -> None:

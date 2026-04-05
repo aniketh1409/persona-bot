@@ -6,6 +6,7 @@ from time import perf_counter
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import func, select
 
 from app.arc_service import ArcService
 from app.character_service import CharacterService, compute_tier
@@ -14,6 +15,7 @@ from app.db import db_session, engine, init_db, qdrant_client, redis_client
 from app.llm_service import LlmService
 from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient, OpenAIEmbeddingClient
 from app.milestone_service import MilestoneService
+from app.models import UserArcProgress, UserMilestone
 from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import (
     CharacterOut,
@@ -25,6 +27,7 @@ from app.schemas import (
     RelationshipOut,
     SessionOut,
     MilestoneOut,
+    JournalOut,
 )
 from app.session_service import SessionService
 from app.state_engine import update_emotional_state
@@ -239,6 +242,34 @@ async def milestones(user_id: str) -> list[MilestoneOut]:
             )
             for milestone, user_milestone in rows
         ]
+
+
+@app.get("/journal/{user_id}", response_model=JournalOut)
+async def journal(user_id: str) -> JournalOut:
+    async with db_session() as db:
+        active_arc_count = await db.scalar(
+            select(func.count()).select_from(UserArcProgress).where(
+                UserArcProgress.user_id == user_id,
+                UserArcProgress.status == "active",
+            )
+        )
+        completed_arc_count = await db.scalar(
+            select(func.count()).select_from(UserArcProgress).where(
+                UserArcProgress.user_id == user_id,
+                UserArcProgress.status == "completed",
+            )
+        )
+        milestone_count = await db.scalar(
+            select(func.count()).select_from(UserMilestone).where(
+                UserMilestone.user_id == user_id,
+            )
+        )
+        return JournalOut(
+            user_id=user_id,
+            active_arc_count=int(active_arc_count or 0),
+            completed_arc_count=int(completed_arc_count or 0),
+            milestone_count=int(milestone_count or 0),
+        )
 
 
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])

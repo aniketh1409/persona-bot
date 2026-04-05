@@ -95,6 +95,13 @@ class MilestoneOut(BaseModel):
     unlocked_at: datetime
 
 
+class JournalOut(BaseModel):
+    user_id: str
+    active_arc_count: int
+    completed_arc_count: int
+    milestone_count: int
+
+
 class PersonaOut(BaseModel):
     """Legacy — kept for backwards compatibility."""
     id: str
