@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import redis_client
+from app.config import get_settings
 from app.models import Character, CharacterRelationship
 from app.schemas import EmotionalState
 from app.tier import TIER_CONTEXT, compute_tier
@@ -18,6 +19,11 @@ from app.tier import TIER_CONTEXT, compute_tier
 class CharacterService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        settings = get_settings()
+        self.decay_enabled = settings.relationship_decay_enabled
+        self.energy_decay_per_hour = settings.relationship_energy_decay_per_hour
+        self.trust_decay_per_hour = settings.relationship_trust_decay_per_hour
+        self.affection_decay_per_hour = settings.relationship_affection_decay_per_hour
 
     # -- Character CRUD ---------------------------------------------------
 
@@ -72,9 +78,11 @@ class CharacterService:
             rel.baseline_mood = data["baseline_mood"]
             rel.tier = data["tier"]
             rel.message_count = data["message_count"]
+            self._apply_decay(rel)
             return rel
 
         rel = await self._get_or_create_relationship(user_id, character_id)
+        self._apply_decay(rel)
         await self._cache_relationship(rel)
         return rel
 
@@ -172,6 +180,25 @@ class CharacterService:
             "message_count": rel.message_count,
         }
         await redis_client.set(cache_key, json.dumps(data), ex=60 * 60 * 6)
+
+    def _apply_decay(self, rel: CharacterRelationship) -> None:
+        if not self.decay_enabled:
+            return
+        now = datetime.now(timezone.utc)
+        last_active = rel.last_active_at
+        if last_active is None:
+            return
+        if last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+
+        age_hours = max(0.0, (now - last_active).total_seconds() / 3600.0)
+        if age_hours < 1.0:
+            return
+
+        rel.energy = max(0.0, rel.energy - (self.energy_decay_per_hour * age_hours))
+        rel.trust = max(0.0, rel.trust - (self.trust_decay_per_hour * age_hours))
+        rel.affection = max(0.0, rel.affection - (self.affection_decay_per_hour * age_hours))
+        rel.tier = compute_tier(rel.trust)[0]
 
     @staticmethod
     def _rel_cache_key(user_id: str, character_id: str) -> str:

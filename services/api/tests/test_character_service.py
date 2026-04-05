@@ -1,4 +1,15 @@
-from app.character_service import compute_tier, TIER_CONTEXT
+from datetime import datetime, timedelta, timezone
+
+from app.character_service import CharacterService, compute_tier, TIER_CONTEXT
+
+
+class _Rel:
+    def __init__(self) -> None:
+        self.trust = 0.8
+        self.affection = 0.8
+        self.energy = 0.8
+        self.tier = 4
+        self.last_active_at = datetime.now(timezone.utc) - timedelta(hours=24)
 
 
 def test_compute_tier_stranger() -> None:
@@ -44,3 +55,33 @@ def test_tier_context_exists_for_all_tiers() -> None:
     for tier in range(1, 6):
         assert tier in TIER_CONTEXT
         assert len(TIER_CONTEXT[tier]) > 20
+
+
+def test_relationship_decay_reduces_scores() -> None:
+    service = CharacterService.__new__(CharacterService)
+    service.decay_enabled = True
+    service.energy_decay_per_hour = 0.01
+    service.trust_decay_per_hour = 0.005
+    service.affection_decay_per_hour = 0.002
+
+    rel = _Rel()
+    service._apply_decay(rel)
+
+    assert rel.energy < 0.8
+    assert rel.trust < 0.8
+    assert rel.affection < 0.8
+    assert 1 <= rel.tier <= 5
+
+
+def test_relationship_decay_noop_when_disabled() -> None:
+    service = CharacterService.__new__(CharacterService)
+    service.decay_enabled = False
+    service.energy_decay_per_hour = 0.01
+    service.trust_decay_per_hour = 0.005
+    service.affection_decay_per_hour = 0.002
+
+    rel = _Rel()
+    before = (rel.energy, rel.trust, rel.affection, rel.tier)
+    service._apply_decay(rel)
+    after = (rel.energy, rel.trust, rel.affection, rel.tier)
+    assert before == after

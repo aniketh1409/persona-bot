@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     default_persona_id: str = "balanced"
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
 
+    relationship_decay_enabled: bool = True
+    relationship_energy_decay_per_hour: float = 0.002
+    relationship_trust_decay_per_hour: float = 0.0005
+    relationship_affection_decay_per_hour: float = 0.0003
+
     llm_provider: str = "ollama"
     embedding_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
