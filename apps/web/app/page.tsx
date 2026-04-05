@@ -130,6 +130,7 @@ export default function HomePage() {
   const activeAssistantIdRef = useRef<string | null>(null);
   const reconnectAttemptRef = useRef(0);
   const timelineRef = useRef<HTMLElement | null>(null);
+  const milestonesRef = useRef<MilestoneItem[]>([]);
 
   const wsUrl = useMemo(resolveWsUrl, []);
   const apiHttpBase = useMemo(() => resolveApiHttpBase(wsUrl), [wsUrl]);
@@ -155,6 +156,7 @@ export default function HomePage() {
   const [view, setView] = useState<"select" | "chat">("select");
   const [arcs, setArcs] = useState<ArcItem[]>([]);
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
+  const [milestoneFeed, setMilestoneFeed] = useState<string[]>([]);
 
   // -- Theme --
   useEffect(() => {
@@ -256,6 +258,7 @@ export default function HomePage() {
 
   useEffect(() => { void loadArcList(); }, [loadArcList]);
   useEffect(() => { void loadMilestones(); }, [loadMilestones]);
+  useEffect(() => { milestonesRef.current = milestones; }, [milestones]);
 
   // -- WebSocket --
   useEffect(() => {
@@ -307,6 +310,17 @@ export default function HomePage() {
         const aid = activeAssistantIdRef.current;
         if (aid) {
           setMessages((prev) => prev.map((m) => m.id === aid ? { ...m, text: parsed.message, streaming: false, latencyMs: parsed.latency_ms, firstTokenMs: parsed.first_token_ms, chunkCount: parsed.chunk_count } : m));
+        }
+        if (parsed.milestones_unlocked && parsed.milestones_unlocked.length > 0) {
+          const resolved = parsed.milestones_unlocked.map((id) => {
+            const match = milestonesRef.current.find((m) => m.id === id);
+            return match ? `${match.icon} ${match.title}` : id;
+          });
+          setMilestoneFeed((prev) => [...resolved, ...prev].slice(0, 5));
+          setMessages((prev) => [
+            ...prev,
+            ...resolved.map((label) => ({ id: makeId(), role: "system" as const, text: `Milestone unlocked: ${label}` })),
+          ]);
         }
         activeAssistantIdRef.current = null;
         setIsAwaitingReply(false);
@@ -546,6 +560,14 @@ export default function HomePage() {
             </span>
           ))}
         </div>
+
+        {milestoneFeed.length > 0 ? (
+          <div className="milestoneFeed">
+            {milestoneFeed.map((item, index) => (
+              <span key={`${item}-${index}`} className="milestoneFeedItem">{item}</span>
+            ))}
+          </div>
+        ) : null}
 
         <section className="timeline" aria-live="polite" ref={timelineRef}>
           {messages.length === 0 ? (

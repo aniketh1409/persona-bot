@@ -407,6 +407,23 @@ body {
   background: var(--surface);
 }
 
+.milestoneFeed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.milestoneFeedItem {
+  font-size: 0.62rem;
+  color: var(--brand);
+  border: 1px dashed var(--brand);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+}
+
 /* ================================================================ */
 /* TIMELINE                                                         */
 /* ================================================================ */

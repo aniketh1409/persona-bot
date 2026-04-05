@@ -442,6 +442,7 @@ def test_done_event_includes_tier(monkeypatch) -> None:
     assert "tier_label" in done
     assert isinstance(done["tier"], int)
     assert "milestones_unlocked" in done
+    assert "kael_confidant" in done["milestones_unlocked"]
 
 
 def test_websocket_includes_arc_context_in_prompt(monkeypatch) -> None:
