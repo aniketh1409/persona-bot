@@ -217,6 +217,34 @@ class FakeMemoryService:
         return []
 
 
+class FakeArc:
+    def __init__(self, arc_id: str, character_id: str, title: str) -> None:
+        self.id = arc_id
+        self.character_id = character_id
+        self.title = title
+        self.description = f"{title} description"
+        self.trust_threshold = 0.7
+        self.affection_threshold = 0.5
+        self.message_count_threshold = 10
+
+
+class FakeArcService:
+    def __init__(self, _db) -> None:
+        pass
+
+    async def evaluate_arc_statuses(self, *, user_id: str, relationship: FakeRelationship):
+        _ = user_id
+        arc = FakeArc("kael_arc_1", relationship.character_id, "Kael Arc")
+        status = "active" if relationship.trust >= 0.5 else "locked"
+        return [(arc, status)]
+
+    async def active_arc_context(self, *, user_id: str, relationship: FakeRelationship) -> str:
+        _ = user_id
+        if relationship.trust >= 0.5:
+            return "Kael is beginning to open up."
+        return ""
+
+
 class FakeLlmService:
     async def stream_reply(
         self,
@@ -286,6 +314,7 @@ def _patch_runtime(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "db_session", fake_db_session)
     monkeypatch.setattr(main_module, "SessionService", FakeSessionService)
     monkeypatch.setattr(main_module, "CharacterService", FakeCharacterService)
+    monkeypatch.setattr(main_module, "ArcService", FakeArcService)
     monkeypatch.setattr(main_module, "memory_service", FakeMemoryService())
     monkeypatch.setattr(main_module, "llm_service", FakeLlmService())
 
@@ -412,6 +441,19 @@ def test_single_relationship_endpoint(monkeypatch) -> None:
     assert payload["character_id"] == "kael"
     assert payload["character_name"] == "Kael"
     assert "tier" in payload
+
+
+def test_arcs_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/arcs/user-1/kael")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert payload[0]["id"] == "kael_arc_1"
+    assert payload[0]["status"] in {"active", "locked"}
 
 
 def test_history_endpoint_returns_events(monkeypatch) -> None:

@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 
+from app.arc_service import ArcService
 from app.character_service import CharacterService, compute_tier
 from app.config import get_settings
 from app.db import db_session, engine, init_db, qdrant_client, redis_client
@@ -15,6 +16,7 @@ from app.memory_service import MemoryChunk, MemoryService, OllamaEmbeddingClient
 from app.rag_context import build_rag_context, pick_memory_hint
 from app.schemas import (
     CharacterOut,
+    ArcOut,
     ChatMessageIn,
     ChatMessageOut,
     HistoryEventOut,
@@ -192,6 +194,31 @@ async def relationship(user_id: str, character_id: str) -> RelationshipOut:
             tier_label=tier_label,
             message_count=rel.message_count,
         )
+
+
+@app.get("/arcs/{user_id}/{character_id}", response_model=list[ArcOut])
+async def arcs(user_id: str, character_id: str) -> list[ArcOut]:
+    async with db_session() as db:
+        char_service = CharacterService(db)
+        relationship = await char_service.load_relationship(user_id, character_id)
+        arc_service = ArcService(db)
+        snapshots = await arc_service.evaluate_arc_statuses(
+            user_id=user_id,
+            relationship=relationship,
+        )
+        return [
+            ArcOut(
+                id=arc.id,
+                character_id=arc.character_id,
+                title=arc.title,
+                description=arc.description,
+                trust_threshold=arc.trust_threshold,
+                affection_threshold=arc.affection_threshold,
+                message_count_threshold=arc.message_count_threshold,
+                status=status,
+            )
+            for arc, status in snapshots
+        ]
 
 
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])
