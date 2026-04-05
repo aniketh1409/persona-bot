@@ -246,6 +246,8 @@ class FakeArcService:
 
 
 class FakeLlmService:
+    last_backstory_context: str = ""
+
     async def stream_reply(
         self,
         *,
@@ -265,6 +267,7 @@ class FakeLlmService:
             persona_system_prompt, persona_style_prompt, persona_temperature,
             memory_hint, tier_context, backstory_context,
         )
+        self.__class__.last_backstory_context = backstory_context
         yield "token-one "
         yield "token-two"
 
@@ -310,6 +313,7 @@ def _patch_runtime(monkeypatch) -> None:
     FakeSessionService.session_creations = 0
     FakeSessionService.last_session_id = 0
     FakeSessionService.last_user_id = 0
+    FakeLlmService.last_backstory_context = ""
 
     monkeypatch.setattr(main_module, "db_session", fake_db_session)
     monkeypatch.setattr(main_module, "SessionService", FakeSessionService)
@@ -405,6 +409,18 @@ def test_done_event_includes_tier(monkeypatch) -> None:
     assert "tier" in done
     assert "tier_label" in done
     assert isinstance(done["tier"], int)
+
+
+def test_websocket_includes_arc_context_in_prompt(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        with client.websocket_connect("/ws/chat") as ws:
+            ws.receive_json()
+            ws.send_json({"message": "hello"})
+            _read_until_done(ws)
+
+    assert "Kael is beginning to open up." in FakeLlmService.last_backstory_context
 
 
 def test_characters_endpoint(monkeypatch) -> None:

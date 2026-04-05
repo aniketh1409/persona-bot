@@ -354,6 +354,11 @@ async def chat_socket(websocket: WebSocket) -> None:
                 tier_context = char_service.get_tier_context(tier)
                 # Only reveal backstory at Confidant level (tier 4+)
                 backstory_context = character.backstory if tier >= 4 else ""
+                arc_service = ArcService(db)
+                arc_context = await arc_service.active_arc_context(
+                    user_id=user_id,
+                    relationship=relationship,
+                )
 
             await _remember_if_needed(
                 user_id=user_id,
@@ -399,7 +404,9 @@ async def chat_socket(websocket: WebSocket) -> None:
                     persona_temperature=char_temperature,
                     memory_hint=memory_hint,
                     tier_context=tier_context,
-                    backstory_context=backstory_context,
+                    backstory_context="\n\n".join(
+                        part for part in [backstory_context, arc_context] if part
+                    ),
                 ):
                     if not chunk:
                         continue
@@ -424,7 +431,9 @@ async def chat_socket(websocket: WebSocket) -> None:
                     persona_temperature=char_temperature,
                     memory_hint=memory_hint,
                     tier_context=tier_context,
-                    backstory_context=backstory_context,
+                    backstory_context="\n\n".join(
+                        part for part in [backstory_context, arc_context] if part
+                    ),
                 )
                 chunk_count = 1
                 first_token_ms = first_token_ms or (perf_counter() - started_at) * 1000
