@@ -401,6 +401,19 @@ def test_personas_endpoint_legacy_compat(monkeypatch) -> None:
     assert len(payload) == 3
 
 
+def test_single_relationship_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/relationships/user-1/kael")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["character_id"] == "kael"
+    assert payload["character_name"] == "Kael"
+    assert "tier" in payload
+
+
 def test_history_endpoint_returns_events(monkeypatch) -> None:
     _patch_runtime(monkeypatch)
 

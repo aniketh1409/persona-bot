@@ -172,6 +172,28 @@ async def relationships(user_id: str) -> list[RelationshipOut]:
         return result
 
 
+@app.get("/relationships/{user_id}/{character_id}", response_model=RelationshipOut)
+async def relationship(user_id: str, character_id: str) -> RelationshipOut:
+    """Return a single relationship snapshot (creates default row if missing)."""
+    async with db_session() as db:
+        char_service = CharacterService(db)
+        rel = await char_service.load_relationship(user_id, character_id)
+        char = await char_service.get_character(character_id)
+        tier_num, tier_label = compute_tier(rel.trust)
+        return RelationshipOut(
+            character_id=character_id,
+            character_name=char.name if char else character_id,
+            archetype=char.archetype if char else None,
+            trust=rel.trust,
+            affection=rel.affection,
+            energy=rel.energy,
+            current_mood=rel.current_mood,
+            tier=tier_num,
+            tier_label=tier_label,
+            message_count=rel.message_count,
+        )
+
+
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])
 async def sessions(user_id: str) -> list[SessionOut]:
     async with db_session() as db:
