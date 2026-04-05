@@ -74,6 +74,17 @@ class RelationshipOut(BaseModel):
     message_count: int
 
 
+class ArcOut(BaseModel):
+    id: str
+    character_id: str
+    title: str
+    description: str
+    trust_threshold: float
+    affection_threshold: float
+    message_count_threshold: int
+    status: str
+
+
 class PersonaOut(BaseModel):
     """Legacy — kept for backwards compatibility."""
     id: str
