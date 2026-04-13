@@ -163,6 +163,23 @@ class SessionService:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_sessions_for_character(
+        self,
+        *,
+        user_id: str,
+        character_id: str,
+        limit: int = 20,
+    ) -> list[ChatSession]:
+        stmt = (
+            select(ChatSession)
+            .where(ChatSession.user_id == user_id)
+            .where(ChatSession.character_id == character_id)
+            .order_by(ChatSession.last_active_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     async def session_preview(self, session_id: str) -> str:
         stmt = (
             select(ConversationEvent)

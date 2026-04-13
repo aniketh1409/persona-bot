@@ -294,6 +294,31 @@ async def sessions(user_id: str) -> list[SessionOut]:
         return result
 
 
+@app.get("/sessions/{user_id}/character/{character_id}", response_model=list[SessionOut])
+async def sessions_for_character(user_id: str, character_id: str) -> list[SessionOut]:
+    async with db_session() as db:
+        service = SessionService(db)
+        rows = await service.list_sessions_for_character(
+            user_id=user_id,
+            character_id=character_id,
+        )
+        result: list[SessionOut] = []
+        for row in rows:
+            preview = await service.session_preview(row.id)
+            result.append(
+                SessionOut(
+                    id=row.id,
+                    character_id=row.character_id,
+                    persona_id=row.persona_id,
+                    message_count=row.message_count,
+                    created_at=row.created_at,
+                    last_active_at=row.last_active_at,
+                    preview=preview,
+                )
+            )
+        return result
+
+
 @app.get("/history/{session_id}", response_model=list[HistoryEventOut])
 async def history(session_id: str, limit: int = 50) -> list[HistoryEventOut]:
     async with db_session() as db:
