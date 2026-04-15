@@ -230,13 +230,13 @@ export default function HomePage() {
   // -- Load sessions --
   const loadSessionList = useCallback(async () => {
     const uid = userId || window.localStorage.getItem(USER_ID_KEY);
-    if (!uid) return;
+    if (!uid || !selectedCharacterId) return;
     try {
-      const res = await fetch(`${apiHttpBase}/sessions/${uid}`);
+      const res = await fetch(`${apiHttpBase}/sessions/${uid}/character/${selectedCharacterId}`);
       if (!res.ok) return;
       setSessionList((await res.json()) as SessionItem[]);
     } catch { /* */ }
-  }, [apiHttpBase, userId]);
+  }, [apiHttpBase, selectedCharacterId, userId]);
 
   useEffect(() => { void loadSessionList(); }, [loadSessionList]);
 
@@ -514,10 +514,10 @@ export default function HomePage() {
         </div>
         <button type="button" className="sidebarNewChat" onClick={handleNewChat} disabled={!connected}>+ New chat</button>
         <div className="sessionList">
-          {sessionList.filter((s) => s.character_id === selectedCharacterId).length === 0 ? (
+          {sessionList.length === 0 ? (
             <p className="sessionEmpty">No conversations yet</p>
           ) : (
-            sessionList.filter((s) => s.character_id === selectedCharacterId).map((s) => (
+            sessionList.map((s) => (
               <button key={s.id} type="button" className={`sessionItem ${s.id === sessionId ? "active" : ""}`} onClick={() => void handleSwitchSession(s.id)}>
                 <span className="sessionPreview">{s.preview}</span>
                 <span className="sessionMeta">{s.message_count} msgs</span>
