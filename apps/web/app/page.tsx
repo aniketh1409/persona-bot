@@ -232,7 +232,7 @@ export default function HomePage() {
     const uid = userId || window.localStorage.getItem(USER_ID_KEY);
     if (!uid || !selectedCharacterId) return;
     try {
-      const res = await fetch(`${apiHttpBase}/sessions/${uid}/character/${selectedCharacterId}`);
+      const res = await fetch(`${apiHttpBase}/sessions/${uid}/character/${selectedCharacterId}?limit=30`);
       if (!res.ok) return;
       setSessionList((await res.json()) as SessionItem[]);
     } catch { /* */ }

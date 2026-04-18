@@ -273,10 +273,11 @@ async def journal(user_id: str) -> JournalOut:
 
 
 @app.get("/sessions/{user_id}", response_model=list[SessionOut])
-async def sessions(user_id: str) -> list[SessionOut]:
+async def sessions(user_id: str, limit: int = 20) -> list[SessionOut]:
     async with db_session() as db:
         service = SessionService(db)
-        rows = await service.list_sessions(user_id)
+        safe_limit = max(1, min(limit, 100))
+        rows = await service.list_sessions(user_id, limit=safe_limit)
         result: list[SessionOut] = []
         for row in rows:
             preview = await service.session_preview(row.id)
@@ -295,12 +296,14 @@ async def sessions(user_id: str) -> list[SessionOut]:
 
 
 @app.get("/sessions/{user_id}/character/{character_id}", response_model=list[SessionOut])
-async def sessions_for_character(user_id: str, character_id: str) -> list[SessionOut]:
+async def sessions_for_character(user_id: str, character_id: str, limit: int = 20) -> list[SessionOut]:
     async with db_session() as db:
         service = SessionService(db)
+        safe_limit = max(1, min(limit, 100))
         rows = await service.list_sessions_for_character(
             user_id=user_id,
             character_id=character_id,
+            limit=safe_limit,
         )
         result: list[SessionOut] = []
         for row in rows:

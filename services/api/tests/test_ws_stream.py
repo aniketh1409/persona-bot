@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -19,6 +20,8 @@ class FakeSession:
     persona_id: str = "kael"
     character_id: str | None = "kael"
     message_count: int = 0
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -138,6 +141,27 @@ class FakeSessionService:
         chunk_count: int,
     ) -> None:
         _ = (session_id, user_id, assistant_event_id, latency_ms, first_token_ms, chunk_count)
+
+    async def list_sessions(self, user_id: str, limit: int = 20) -> list[FakeSession]:
+        rows = [s for s in self.sessions.values() if s.user_id == user_id]
+        return rows[:limit]
+
+    async def list_sessions_for_character(
+        self,
+        *,
+        user_id: str,
+        character_id: str,
+        limit: int = 20,
+    ) -> list[FakeSession]:
+        rows = [
+            s
+            for s in self.sessions.values()
+            if s.user_id == user_id and s.character_id == character_id
+        ]
+        return rows[:limit]
+
+    async def session_preview(self, session_id: str) -> str:
+        return f"preview:{session_id}"
 
 
 class FakeCharacterService:
@@ -532,6 +556,23 @@ def test_journal_endpoint(monkeypatch) -> None:
     payload = response.json()
     assert payload["user_id"] == "user-1"
     assert payload["active_arc_count"] == 0
+
+
+def test_sessions_for_character_limit_endpoint(monkeypatch) -> None:
+    _patch_runtime(monkeypatch)
+    FakeSessionService.sessions = {
+        "s1": FakeSession(id="s1", user_id="user-1", character_id="kael", message_count=1),
+        "s2": FakeSession(id="s2", user_id="user-1", character_id="kael", message_count=2),
+        "s3": FakeSession(id="s3", user_id="user-1", character_id="lyra", message_count=3),
+    }
+
+    with TestClient(main_module.app) as client:
+        response = client.get("/sessions/user-1/character/kael?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["character_id"] == "kael"
 
 
 def test_history_endpoint_returns_events(monkeypatch) -> None:
