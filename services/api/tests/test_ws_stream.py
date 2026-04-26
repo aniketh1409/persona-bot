@@ -295,8 +295,9 @@ class FakeMilestoneService:
             return [FakeMilestone("kael_confidant")]
         return []
 
-    async def list_user_milestones(self, user_id: str):
+    async def list_user_milestones(self, user_id: str, *, limit: int = 50):
         _ = user_id
+        _ = limit
         return [(FakeMilestone("kael_confidant"), FakeUserMilestone())]
 
 
@@ -538,11 +539,12 @@ def test_milestones_endpoint(monkeypatch) -> None:
     _patch_runtime(monkeypatch)
 
     with TestClient(main_module.app) as client:
-        response = client.get("/milestones/user-1")
+        response = client.get("/milestones/user-1?limit=1")
 
     assert response.status_code == 200
     payload = response.json()
     assert isinstance(payload, list)
+    assert len(payload) == 1
     assert payload[0]["id"] == "kael_confidant"
 
 

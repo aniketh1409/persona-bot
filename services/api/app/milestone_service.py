@@ -62,12 +62,18 @@ class MilestoneService:
             await self.db.flush()
         return newly_unlocked
 
-    async def list_user_milestones(self, user_id: str) -> list[tuple[Milestone, UserMilestone]]:
+    async def list_user_milestones(
+        self,
+        user_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[tuple[Milestone, UserMilestone]]:
         stmt = (
             select(Milestone, UserMilestone)
             .join(UserMilestone, UserMilestone.milestone_id == Milestone.id)
             .where(UserMilestone.user_id == user_id)
             .order_by(UserMilestone.unlocked_at.desc())
+            .limit(limit)
         )
         result = await self.db.execute(stmt)
         return list(result.all())

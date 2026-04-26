@@ -256,7 +256,7 @@ export default function HomePage() {
     const uid = userId || window.localStorage.getItem(USER_ID_KEY);
     if (!uid) return;
     try {
-      const res = await fetch(`${apiHttpBase}/milestones/${uid}`);
+      const res = await fetch(`${apiHttpBase}/milestones/${uid}?limit=20`);
       if (!res.ok) return;
       setMilestones((await res.json()) as MilestoneItem[]);
     } catch {

@@ -227,10 +227,11 @@ async def arcs(user_id: str, character_id: str) -> list[ArcOut]:
 
 
 @app.get("/milestones/{user_id}", response_model=list[MilestoneOut])
-async def milestones(user_id: str) -> list[MilestoneOut]:
+async def milestones(user_id: str, limit: int = 50) -> list[MilestoneOut]:
     async with db_session() as db:
         milestone_service = MilestoneService(db)
-        rows = await milestone_service.list_user_milestones(user_id)
+        safe_limit = max(1, min(limit, 200))
+        rows = await milestone_service.list_user_milestones(user_id, limit=safe_limit)
         return [
             MilestoneOut(
                 id=milestone.id,
